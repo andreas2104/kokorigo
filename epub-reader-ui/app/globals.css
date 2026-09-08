@@ -1,0 +1,74 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 220 33% 98%;
+  --foreground: 222 40% 12%;
+  --card: 0 0% 100%;
+  --card-foreground: 222 40% 12%;
+  --muted: 220 20% 94%;
+  --muted-foreground: 220 12% 42%;
+  --border: 220 18% 88%;
+  --primary: 243 75% 59%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 262 83% 58%;
+  --accent-foreground: 0 0% 100%;
+  --ring: 243 75% 59%;
+}
+
+.dark {
+  --background: 228 44% 7%;
+  --foreground: 220 30% 96%;
+  --card: 228 30% 11%;
+  --card-foreground: 220 30% 96%;
+  --muted: 228 22% 15%;
+  --muted-foreground: 220 12% 62%;
+  --border: 228 20% 18%;
+  --primary: 243 82% 66%;
+  --primary-foreground: 0 0% 100%;
+  --accent: 262 84% 64%;
+  --accent-foreground: 0 0% 100%;
+  --ring: 243 80% 70%;
+}
+
+html {
+  color-scheme: light;
+}
+
+html.dark {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background-color: hsl(var(--primary) / 0.3);
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background-color: hsl(var(--muted-foreground) / 0.25);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background-color: hsl(var(--muted-foreground) / 0.4);
+}
+
+input[type="range"] {
+  accent-color: hsl(var(--primary));
+}

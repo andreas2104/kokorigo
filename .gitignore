@@ -1,0 +1,13 @@
+# Python
+.venv/
+
+# .NET build artifacts
+**/bin/
+**/obj/
+
+# Runtime data (uploaded EPUBs, index)
+EpubLibrary/library/
+
+# OS/editor
+.DS_Store
+*.user
