@@ -31,6 +31,16 @@ RUN "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --upgrade pip \
     && "$VIRTUAL_ENV/bin/pip" install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu \
     && "$VIRTUAL_ENV/bin/pip" install --no-cache-dir -r /tmp/kokoro-requirements.txt
 
+# ---- Environnement Python isolé de F5-TTS ----
+FROM python:3.12-slim-bookworm AS f5tts-build
+ARG F5_TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+ENV VIRTUAL_ENV=/opt/f5tts-venv
+RUN python -m venv "$VIRTUAL_ENV"
+COPY assets/tts/f5tts/requirements.txt /tmp/f5tts-requirements.txt
+RUN "$VIRTUAL_ENV/bin/pip" install --no-cache-dir --upgrade pip \
+    && "$VIRTUAL_ENV/bin/pip" install --no-cache-dir torch torchaudio --index-url "$F5_TORCH_INDEX_URL" \
+    && "$VIRTUAL_ENV/bin/pip" install --no-cache-dir -r /tmp/f5tts-requirements.txt
+
 # Piper embarque ONNX Runtime 1.14, qui charge encore OpenSSL 1.1.
 FROM node:20-bullseye-slim AS legacy-openssl
 
@@ -41,6 +51,7 @@ COPY --from=legacy-openssl /usr/lib/x86_64-linux-gnu/libssl.so.1.1 /usr/lib/x86_
 COPY --from=legacy-openssl /usr/lib/x86_64-linux-gnu/libcrypto.so.1.1 /usr/lib/x86_64-linux-gnu/libcrypto.so.1.1
 COPY --from=kokoro-build /usr/local /usr/local
 COPY --from=kokoro-build /opt/kokoro-venv /opt/kokoro-venv
+COPY --from=f5tts-build /opt/f5tts-venv /opt/f5tts-venv
 COPY --from=caddy:2-alpine /usr/bin/caddy /usr/bin/caddy
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
     ASPNETCORE_URLS=http://127.0.0.1:5055 \
@@ -50,22 +61,27 @@ ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
     MyLibrary__Path=/data/library \
     Tts__Kokoro__Directory=/app/kokoro \
     Tts__Kokoro__Python=/opt/kokoro-venv/bin/python \
+    Tts__F5__Directory=/app/f5tts \
+    Tts__F5__Python=/opt/f5tts-venv/bin/python \
+    Tts__F5__CacheDirectory=/data/cache/f5tts \
+    Tts__F5__ModelCacheDirectory=/data/models/f5tts \
     HF_HOME=/data/models/huggingface \
     HF_HUB_DISABLE_XET=1 \
     XDG_CACHE_HOME=/data/models/cache
 WORKDIR /app
 COPY --from=api-build /out/api ./api
 COPY assets/tts/kokoro/server.py ./kokoro/server.py
+COPY assets/tts/f5tts/ ./f5tts/
 COPY --from=web-build /src/epub-reader-ui/.next/standalone ./web
 COPY --from=web-build /src/epub-reader-ui/.next/static ./web/.next/static
 COPY Caddyfile ./Caddyfile
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends espeak-ng libsndfile1 libgomp1 libssl3 \
+    && apt-get install -y --no-install-recommends espeak-ng ffmpeg libsndfile1 libgomp1 libssl3 \
     && rm -rf /var/lib/apt/lists/* \
     && ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet \
     && chmod +x ./docker-entrypoint.sh \
-    && mkdir -p /data/library /data/models
-VOLUME ["/data/library", "/data/models"]
+    && mkdir -p /data/library /data/models /data/cache/f5tts
+VOLUME ["/data/library", "/data/models", "/data/cache"]
 EXPOSE 3005
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

@@ -1,0 +1,13 @@
+{
+  "voices": [
+    {
+      "id": "narratrice-fr",
+      "name": "Narratrice française",
+      "language": "fr-FR",
+      "character": "Français · Femme",
+      "description": "Voix française naturelle, optimisée pour la lecture longue",
+      "referenceAudio": "references/narratrice-fr.wav",
+      "referenceText": "references/narratrice-fr.txt"
+    }
+  ]
+}

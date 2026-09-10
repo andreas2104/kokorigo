@@ -57,7 +57,7 @@ export default function DropZone({ onFile, onBrowse, error }: Props) {
         </h2>
         <p className="mt-3 max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
           ou parcourez vos dossiers pour importer un livre. Le texte est extrait
-          localement dans votre navigateur, puis lu à la demande par Piper ou Kokoro.
+          localement dans votre navigateur, puis lu à la demande par Piper, Kokoro ou F5-TTS.
         </p>
 
         <button
@@ -80,7 +80,7 @@ export default function DropZone({ onFile, onBrowse, error }: Props) {
           </span>
           <span className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs text-muted-foreground">
             <Volume2 className="h-3.5 w-3.5 text-indigo-400" aria-hidden="true" />
-            Synthèse vocale Piper + Kokoro
+            Synthèse vocale Piper + Kokoro + F5-TTS
           </span>
         </div>
 

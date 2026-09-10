@@ -7,8 +7,11 @@ builder.Services.AddSingleton<PiperTtsService>();
 builder.Services.AddSingleton<ITtsEngine>(services => services.GetRequiredService<PiperTtsService>());
 builder.Services.AddHttpClient<KokoroTtsService>();
 builder.Services.AddSingleton<ITtsEngine>(services => services.GetRequiredService<KokoroTtsService>());
+builder.Services.AddHttpClient<F5TtsService>();
+builder.Services.AddSingleton<ITtsEngine>(services => services.GetRequiredService<F5TtsService>());
 builder.Services.AddSingleton<ITtsService, TtsService>();
 builder.Services.AddHostedService<KokoroProcessHostedService>();
+builder.Services.AddHostedService<F5TtsProcessHostedService>();
 
 builder.Services.AddCors(options =>
 {

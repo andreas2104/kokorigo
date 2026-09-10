@@ -3,13 +3,18 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    ports:
-      - "8081:3005"
+    container_name: kokorigo
     volumes:
       - kokorigo-library:/data/library
       - kokorigo-models:/data/models
+      - kokorigo-tts-cache:/data/cache
     restart: unless-stopped
 
 volumes:
   kokorigo-library:
   kokorigo-models:
+  kokorigo-tts-cache:
+
+networks:
+  npm-network:
+    external: true

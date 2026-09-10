@@ -8,5 +8,8 @@
 **/obj
 assets/tts/kokoro/.venv
 assets/tts/kokoro/__pycache__
+assets/tts/f5tts/.venv
+assets/tts/f5tts/__pycache__
+assets/tts/f5tts/cache
 Dockerfile*
 docker-compose*.yml

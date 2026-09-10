@@ -11,3 +11,4 @@ EpubLibrary/library/
 # OS/editor
 .DS_Store
 *.user
+!assets/tts/f5tts/references/*.wav

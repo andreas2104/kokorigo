@@ -48,6 +48,7 @@ export default function SettingsDialog({ onClose }: Props) {
   const voicesQuery = useVoices();
   const piperReady = voicesQuery.data?.some((voice) => voice.engine === "piper" && voice.available) ?? false;
   const kokoroReady = voicesQuery.data?.some((voice) => voice.engine === "kokoro" && voice.available) ?? false;
+  const f5Ready = voicesQuery.data?.some((voice) => voice.engine === "f5tts" && voice.available) ?? false;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -91,7 +92,7 @@ export default function SettingsDialog({ onClose }: Props) {
           <div className="min-w-0 text-sm">
             <p className="font-semibold text-emerald-400">Service vocal opérationnel</p>
             <p className="text-xs text-emerald-300/70">
-              Piper {piperReady ? "prêt" : "indisponible"} · Kokoro {kokoroReady ? "prêt" : "non démarré"}
+              Piper {piperReady ? "prêt" : "indisponible"} · Kokoro {kokoroReady ? "prêt" : "non démarré"} · F5-TTS {f5Ready ? "prêt" : "non démarré"}
             </p>
           </div>
         </div>
@@ -101,8 +102,8 @@ export default function SettingsDialog({ onClose }: Props) {
             <Headphones className="h-4 w-4" aria-hidden="true" /> Synthèse vocale
           </h3>
           <ul className="space-y-2.5">
-            <Row icon={<Volume2 className="h-4 w-4" />} label="Moteurs" value="Piper TTS + Kokoro-82M" />
-            <Row icon={<Cpu className="h-4 w-4" />} label="Modèles vocaux" value={`${PIPER_MODEL} · Kokoro français + anglais`} />
+            <Row icon={<Volume2 className="h-4 w-4" />} label="Moteurs" value="Piper + Kokoro-82M + F5-TTS Français" />
+            <Row icon={<Cpu className="h-4 w-4" />} label="Modèles vocaux" value={`${PIPER_MODEL} · Kokoro multilingue · F5 français haute qualité`} />
             <Row icon={<Monitor className="h-4 w-4" />} label="Vitesse de lecture" value="1× · 1.25× · 1.5×" />
           </ul>
         </section>

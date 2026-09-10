@@ -18,6 +18,9 @@ import VoiceSelector from "@/components/VoiceSelector";
 import { buildWordTimings, tokenizeText, wordIndexAtProgress } from "@/lib/word-timing";
 
 type Paragraph = { id: number; text: string };
+type ReaderPage = { startIndex: number; paragraphs: Paragraph[] };
+
+const PAGE_CHARACTER_TARGET = 1800;
 
 type Props = {
   file: File;
@@ -98,6 +101,27 @@ async function extractParagraphs(file: File): Promise<Paragraph[]> {
   return paragraphs;
 }
 
+function paginateParagraphs(paragraphs: Paragraph[]): ReaderPage[] {
+  const pages: ReaderPage[] = [];
+  let pageParagraphs: Paragraph[] = [];
+  let pageLength = 0;
+  let pageStartIndex = 0;
+
+  paragraphs.forEach((paragraph, paragraphIndex) => {
+    if (pageParagraphs.length && pageLength + paragraph.text.length > PAGE_CHARACTER_TARGET) {
+      pages.push({ startIndex: pageStartIndex, paragraphs: pageParagraphs });
+      pageParagraphs = [];
+      pageLength = 0;
+      pageStartIndex = paragraphIndex;
+    }
+    pageParagraphs.push(paragraph);
+    pageLength += paragraph.text.length;
+  });
+
+  if (pageParagraphs.length) pages.push({ startIndex: pageStartIndex, paragraphs: pageParagraphs });
+  return pages;
+}
+
 export default function EpubReaderWithTTS({
   file,
   onClose,
@@ -113,8 +137,12 @@ export default function EpubReaderWithTTS({
   const [internalSpeed, setInternalSpeed] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
   const [activeWordIndex, setActiveWordIndex] = useState<number | null>(null);
+  const [readingStartWordIndex, setReadingStartWordIndex] = useState(0);
+  const [pageInput, setPageInput] = useState("1");
   const [loadError, setLoadError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const readingPaneRef = useRef<HTMLElement | null>(null);
+  const activeWordRef = useRef<HTMLButtonElement | null>(null);
   const voicesQuery = useVoices();
   const selectedVoiceId = voiceId ?? internalVoiceId;
   const speed = playbackSpeed ?? internalSpeed;
@@ -134,6 +162,8 @@ export default function EpubReaderWithTTS({
     setActiveIndex(0);
     setIsPlaying(false);
     setActiveWordIndex(null);
+    setReadingStartWordIndex(0);
+    setPageInput("1");
     setLoadError(null);
     void extractParagraphs(file)
       .then((value) => {
@@ -151,9 +181,17 @@ export default function EpubReaderWithTTS({
   const current = paragraphs[activeIndex];
   const nextText = paragraphs[activeIndex + 1]?.text;
   const currentTokens = useMemo(() => tokenizeText(current?.text ?? ""), [current?.text]);
-  const currentWordTimings = useMemo(() => buildWordTimings(currentTokens), [currentTokens]);
+  const currentSpeechTokens = useMemo(() => {
+    const startTokenIndex = currentTokens.findIndex((token) => token.wordIndex === readingStartWordIndex);
+    return startTokenIndex >= 0 ? currentTokens.slice(startTokenIndex) : currentTokens;
+  }, [currentTokens, readingStartWordIndex]);
+  const currentSpeechText = useMemo(
+    () => currentSpeechTokens.map((token) => token.text).join(""),
+    [currentSpeechTokens],
+  );
+  const currentWordTimings = useMemo(() => buildWordTimings(currentSpeechTokens), [currentSpeechTokens]);
   const tts = useAudioTTS(
-    current?.text ?? "",
+    currentSpeechText,
     activeIndex,
     nextText,
     { voice: selectedVoiceId, speed },
@@ -189,7 +227,10 @@ export default function EpubReaderWithTTS({
         cancelAnimationFrame(animationFrame);
         setActiveWordIndex(null);
         tts.prefetchNext();
-        if (activeIndex < paragraphs.length - 1) setActiveIndex((index) => index + 1);
+        if (activeIndex < paragraphs.length - 1) {
+          setReadingStartWordIndex(0);
+          setActiveIndex((index) => index + 1);
+        }
         else setIsPlaying(false);
       };
       return () => {
@@ -205,7 +246,65 @@ export default function EpubReaderWithTTS({
     if (isPlaying && current) tts.prefetchNext();
   }, [activeIndex, current, isPlaying, speed, selectedVoiceId]);
 
-  const visibleParagraphs = useMemo(() => paragraphs.slice(0, activeIndex + 8), [paragraphs, activeIndex]);
+  useEffect(() => {
+    const readingPane = readingPaneRef.current;
+    const activeWord = activeWordRef.current;
+    if (!isPlaying || !readingPane || !activeWord) return;
+
+    const paneBounds = readingPane.getBoundingClientRect();
+    const wordBounds = activeWord.getBoundingClientRect();
+    const upperReadingLimit = paneBounds.top + paneBounds.height * 0.3;
+    const lowerReadingLimit = paneBounds.top + paneBounds.height * 0.7;
+
+    if (wordBounds.top >= upperReadingLimit && wordBounds.bottom <= lowerReadingLimit) return;
+
+    const wordCenter = wordBounds.top + wordBounds.height / 2;
+    const paneCenter = paneBounds.top + paneBounds.height / 2;
+    readingPane.scrollTo({
+      top: readingPane.scrollTop + wordCenter - paneCenter,
+      behavior: "smooth",
+    });
+  }, [activeIndex, activeWordIndex, isPlaying]);
+
+  const pages = useMemo(() => paginateParagraphs(paragraphs), [paragraphs]);
+  const pageIndex = Math.max(0, pages.findIndex((page) =>
+    activeIndex >= page.startIndex && activeIndex < page.startIndex + page.paragraphs.length,
+  ));
+  const visibleParagraphs = pages[pageIndex]?.paragraphs ?? [];
+
+  useEffect(() => {
+    if (pages.length) setPageInput(String(pageIndex + 1));
+  }, [pageIndex, pages.length]);
+
+  const startReadingAt = (paragraphIndex: number, wordIndex: number) => {
+    audioRef.current?.pause();
+    void tts.cancel();
+    setActiveWordIndex(wordIndex);
+    setReadingStartWordIndex(wordIndex);
+    setActiveIndex(paragraphIndex);
+    setIsPlaying(true);
+  };
+
+  const goToPage = (nextPageIndex: number) => {
+    const page = pages[nextPageIndex];
+    if (!page) return;
+    setActiveWordIndex(null);
+    setReadingStartWordIndex(0);
+    setActiveIndex(page.startIndex);
+    readingPaneRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const submitPage = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const requestedPage = Number.parseInt(pageInput, 10);
+    if (!Number.isFinite(requestedPage) || !pages.length) {
+      setPageInput(String(pageIndex + 1));
+      return;
+    }
+    const targetPage = Math.min(pages.length, Math.max(1, requestedPage));
+    setPageInput(String(targetPage));
+    goToPage(targetPage - 1);
+  };
 
   const play = () => {
     if (!current) return;
@@ -214,6 +313,7 @@ export default function EpubReaderWithTTS({
 
   const pause = () => {
     audioRef.current?.pause();
+    void tts.cancel();
     setActiveWordIndex(null);
     setIsPlaying(false);
   };
@@ -228,6 +328,7 @@ export default function EpubReaderWithTTS({
       event.preventDefault();
       if (isPlaying) {
         audioRef.current?.pause();
+        void tts.cancel();
         setActiveWordIndex(null);
         setIsPlaying(false);
       } else if (current) {
@@ -237,7 +338,7 @@ export default function EpubReaderWithTTS({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [current, isPlaying]);
+  }, [current, isPlaying, tts.cancel]);
 
   return (
     <div className={embedded
@@ -247,7 +348,7 @@ export default function EpubReaderWithTTS({
       <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
         <div className="min-w-0">
           <p className="truncate font-semibold">{file.name}</p>
-          <p className="text-xs text-slate-400">Lecteur EPUB + Piper/Kokoro TTS</p>
+          <p className="text-xs text-slate-400">Cliquez sur un mot pour lire à partir de cet endroit</p>
         </div>
         <div className="flex items-center gap-2">
           {isPlaying ? (
@@ -260,28 +361,58 @@ export default function EpubReaderWithTTS({
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto bg-slate-100 px-4 py-8 text-slate-900">
+      <main ref={readingPaneRef} className="flex-1 overflow-y-auto bg-slate-100 px-4 py-8 text-slate-900">
         <article className="mx-auto max-w-3xl rounded-xl bg-white p-6 shadow-sm sm:p-10">
           {!paragraphs.length && !loadError && <p className="text-slate-500">Extraction des paragraphes…</p>}
           {loadError && <p className="text-red-600">{loadError}</p>}
-          {visibleParagraphs.map((paragraph) => (
-            <p key={paragraph.id} className="mb-5 rounded px-2 text-lg leading-8">
-              {paragraph.id === current?.id
-                ? currentTokens.map((token, tokenIndex) => token.wordIndex === activeWordIndex
-                  ? <mark key={tokenIndex} className="rounded bg-amber-300 px-0.5 text-inherit transition-colors" aria-current="true">{token.text}</mark>
-                  : <span key={tokenIndex}>{token.text}</span>)
-                : paragraph.text}
-            </p>
-          ))}
+          {visibleParagraphs.map((paragraph, pageParagraphIndex) => {
+            const paragraphIndex = (pages[pageIndex]?.startIndex ?? 0) + pageParagraphIndex;
+            const tokens = paragraph.id === current?.id ? currentTokens : tokenizeText(paragraph.text);
+            return (
+              <p key={paragraph.id} className="mb-5 rounded px-2 text-lg leading-8">
+                {tokens.map((token, tokenIndex) => {
+                  if (token.wordIndex === null) return <span key={tokenIndex}>{token.text}</span>;
+                  const isActiveWord = paragraph.id === current?.id && token.wordIndex === activeWordIndex;
+                  return (
+                    <button
+                      ref={isActiveWord ? activeWordRef : undefined}
+                      key={tokenIndex}
+                      type="button"
+                      onClick={() => startReadingAt(paragraphIndex, token.wordIndex as number)}
+                      className={`cursor-pointer rounded px-0.5 text-left font-inherit transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 ${isActiveWord ? "bg-amber-300" : "hover:bg-amber-100"}`}
+                      aria-current={isActiveWord ? "true" : undefined}
+                      aria-label={`Lire à partir de « ${token.text} »`}
+                    >
+                      {token.text}
+                    </button>
+                  );
+                })}
+              </p>
+            );
+          })}
         </article>
       </main>
 
       <footer className="border-t border-slate-800 bg-slate-950 px-4 py-3">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2">
-          <button onClick={() => setActiveIndex((index) => Math.max(0, index - 1))} className="rounded-lg p-2 hover:bg-slate-800" aria-label="Précédent"><ChevronLeft /></button>
+          <button onClick={() => goToPage(pageIndex - 1)} disabled={pageIndex === 0} className="rounded-lg p-2 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-30" aria-label="Page précédente"><ChevronLeft /></button>
           {isPlaying ? <button onClick={pause} className="rounded-lg bg-indigo-600 p-3 hover:bg-indigo-500" aria-label="Pause"><Pause /></button> : <button onClick={play} disabled={!current || tts.isLoading} className="rounded-lg bg-indigo-600 p-3 hover:bg-indigo-500 disabled:opacity-50" aria-label="Lecture"><Play /></button>}
-          <button onClick={() => setActiveIndex((index) => Math.min(paragraphs.length - 1, index + 1))} className="rounded-lg p-2 hover:bg-slate-800" aria-label="Suivant"><ChevronRight /></button>
-          <span className="mx-2 text-sm text-slate-400">{activeIndex + 1} / {paragraphs.length || "…"}</span>
+          <button onClick={() => goToPage(pageIndex + 1)} disabled={pageIndex >= pages.length - 1} className="rounded-lg p-2 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-30" aria-label="Page suivante"><ChevronRight /></button>
+          <span className="mx-2 text-sm text-slate-400">Page {pages.length ? pageIndex + 1 : "…"} / {pages.length || "…"}</span>
+          <form onSubmit={submitPage} className="flex items-center gap-1" aria-label="Aller à une page">
+            <label htmlFor="reader-page-number" className="sr-only">Numéro de page</label>
+            <input
+              id="reader-page-number"
+              type="number"
+              min="1"
+              max={Math.max(1, pages.length)}
+              value={pageInput}
+              onChange={(event) => setPageInput(event.target.value)}
+              className="h-9 w-16 rounded-md border border-slate-700 bg-slate-900 px-2 text-center text-sm text-white outline-none focus:border-amber-500"
+              aria-label="Numéro de page"
+            />
+            <button type="submit" disabled={!pages.length} className="h-9 rounded-md bg-slate-800 px-3 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-40">Aller</button>
+          </form>
           {!embedded && <label className="ml-auto flex items-center gap-2 text-sm text-slate-300"><Volume2 className="h-4 w-4" />
             <VoiceSelector voices={voicesQuery.data ?? []} selectedVoiceId={selectedVoiceId} onChange={setSelectedVoiceId} disabled={voicesQuery.isLoading} />
           </label>}

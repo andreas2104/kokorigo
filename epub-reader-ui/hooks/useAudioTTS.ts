@@ -1,6 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useMemo } from "react";
 import { TTS_API_URL } from "@/lib/config";
 
 export type TTSOptions = {
@@ -8,13 +9,14 @@ export type TTSOptions = {
   speed: number;
 };
 
-export async function requestTtsAudio(text: string, options: TTSOptions): Promise<string> {
+export async function requestTtsAudio(text: string, options: TTSOptions, signal?: AbortSignal): Promise<string> {
   let response: Response;
   try {
     response = await fetch(`${TTS_API_URL}/api/v1/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ text, ...options }),
+      signal,
     });
   } catch {
     throw new Error(`Service vocal indisponible (${TTS_API_URL})`);
@@ -40,24 +42,37 @@ export function useAudioTTS(
   enabled: boolean,
 ) {
   const queryClient = useQueryClient();
+  const queryKey = useMemo(
+    () => audioTTSKey(text, paragraphIndex, options),
+    [options.speed, options.voice, paragraphIndex, text],
+  );
   const query = useQuery({
-    queryKey: audioTTSKey(text, paragraphIndex, options),
-    queryFn: () => requestTtsAudio(text, options),
+    queryKey,
+    queryFn: ({ signal }) => requestTtsAudio(text, options, signal),
     enabled: enabled && text.trim().length > 0,
     staleTime: Infinity,
     gcTime: 30 * 60 * 1000,
     retry: false,
   });
 
-  const prefetchNext = () => {
+  useEffect(() => () => {
+    void queryClient.cancelQueries({ queryKey, exact: true });
+  }, [options.speed, options.voice, paragraphIndex, queryClient, text]);
+
+  const prefetchNext = useCallback(() => {
     if (!nextText?.trim()) return;
     void queryClient.prefetchQuery({
       queryKey: audioTTSKey(nextText, paragraphIndex + 1, options),
-      queryFn: () => requestTtsAudio(nextText, options),
+      queryFn: ({ signal }) => requestTtsAudio(nextText, options, signal),
       staleTime: Infinity,
       gcTime: 30 * 60 * 1000,
     });
-  };
+  }, [nextText, options.speed, options.voice, paragraphIndex, queryClient]);
 
-  return { ...query, prefetchNext };
+  const cancel = useCallback(
+    () => queryClient.cancelQueries({ queryKey, exact: true }),
+    [queryClient, queryKey],
+  );
+
+  return { ...query, prefetchNext, cancel };
 }

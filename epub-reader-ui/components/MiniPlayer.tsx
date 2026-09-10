@@ -170,7 +170,7 @@ export default function MiniPlayer({ book, onClose }: Props) {
           {voices.length > 0
             ? voices.map((voice) => (
                 <option key={voice.id} value={voice.id} disabled={!voice.available}>
-                  {voice.engine === "kokoro" ? "Kokoro" : "Piper"} · {voice.name} · {voice.language}{voice.available ? "" : " (indisponible)"}
+                  {voice.engine === "f5tts" ? "F5-TTS" : voice.engine === "kokoro" ? "Kokoro" : "Piper"} · {voice.name} · {voice.language}{voice.available ? "" : " (indisponible)"}
                 </option>
               ))
             : (

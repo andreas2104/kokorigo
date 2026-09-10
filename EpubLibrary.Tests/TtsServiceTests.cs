@@ -32,6 +32,21 @@ public sealed class TtsServiceTests
     }
 
     [Fact]
+    public async Task NamespacedFrenchVoiceUsesF5Tts()
+    {
+        var piper = new FakeEngine("piper", "piper:ff_siwis");
+        var kokoro = new FakeEngine("kokoro", "kokoro:ff_siwis");
+        var f5 = new FakeEngine("f5tts", "f5tts:narratrice-fr");
+        var service = new TtsService([piper, kokoro, f5]);
+
+        await service.SynthesizeAsync("Bonjour", "f5tts:narratrice-fr", 1);
+
+        Assert.Equal(0, piper.Calls);
+        Assert.Equal(0, kokoro.Calls);
+        Assert.Equal(1, f5.Calls);
+    }
+
+    [Fact]
     public async Task VoiceCannotBeSentToAnotherEngine()
     {
         var service = new TtsService([

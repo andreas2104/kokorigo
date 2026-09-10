@@ -21,7 +21,7 @@ export default function VoiceSelector({ voices, selectedVoiceId, onChange, disab
   const selectedVoice = voices.find((voice) => voice.id === selectedVoiceId) ?? voices[0];
   const groupedVoices = useMemo(() => {
     return voices.reduce<Record<string, Voice[]>>((groups, voice) => {
-      const engine = voice.engine === "kokoro" ? "Kokoro" : "Piper";
+      const engine = voice.engine === "f5tts" ? "F5-TTS Français" : voice.engine === "kokoro" ? "Kokoro" : "Piper";
       (groups[`${engine} · ${voice.language}`] ??= []).push(voice);
       return groups;
     }, {});
@@ -82,7 +82,7 @@ export default function VoiceSelector({ voices, selectedVoiceId, onChange, disab
         <span className="min-w-0">
           <span className="block truncate font-medium">{selectedVoice?.name ?? "Choisir une voix"}</span>
           <span className="block text-xs text-slate-400">
-            {selectedVoice ? `${selectedVoice.engine === "kokoro" ? "Kokoro" : "Piper"} · ${selectedVoice.language}` : ""}
+            {selectedVoice ? `${selectedVoice.engine === "f5tts" ? "F5-TTS Français" : selectedVoice.engine === "kokoro" ? "Kokoro" : "Piper"} · ${selectedVoice.language}` : ""}
           </span>
         </span>
         <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
