@@ -1,0 +1,15 @@
+services:
+  kokorigo:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8081:3005"
+    volumes:
+      - kokorigo-library:/data/library
+      - kokorigo-models:/data/models
+    restart: unless-stopped
+
+volumes:
+  kokorigo-library:
+  kokorigo-models:

@@ -15,12 +15,18 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAudioTTS } from "@/hooks/useAudioTTS";
 import { useVoices } from "@/hooks/useVoices";
 import VoiceSelector from "@/components/VoiceSelector";
+import { buildWordTimings, tokenizeText, wordIndexAtProgress } from "@/lib/word-timing";
 
 type Paragraph = { id: number; text: string };
 
 type Props = {
   file: File;
   onClose: () => void;
+  embedded?: boolean;
+  voiceId?: string;
+  onVoiceChange?: (voiceId: string) => void;
+  playbackSpeed?: number;
+  onPlaybackSpeedChange?: (speed: number) => void;
 };
 
 function splitParagraphs(html: string, startAt: number): Paragraph[] {
@@ -92,19 +98,32 @@ async function extractParagraphs(file: File): Promise<Paragraph[]> {
   return paragraphs;
 }
 
-export default function EpubReaderWithTTS({ file, onClose }: Props) {
+export default function EpubReaderWithTTS({
+  file,
+  onClose,
+  embedded = false,
+  voiceId,
+  onVoiceChange,
+  playbackSpeed,
+  onPlaybackSpeedChange,
+}: Props) {
   const [paragraphs, setParagraphs] = useState<Paragraph[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [selectedVoiceId, setSelectedVoiceId] = useState("ff_siwis");
-  const [speed, setSpeed] = useState(1);
+  const [internalVoiceId, setInternalVoiceId] = useState("piper:ff_siwis");
+  const [internalSpeed, setInternalSpeed] = useState(1);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [activeWordIndex, setActiveWordIndex] = useState<number | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const voicesQuery = useVoices();
+  const selectedVoiceId = voiceId ?? internalVoiceId;
+  const speed = playbackSpeed ?? internalSpeed;
+  const setSelectedVoiceId = onVoiceChange ?? setInternalVoiceId;
+  const setSpeed = onPlaybackSpeedChange ?? setInternalSpeed;
 
   useEffect(() => {
-    const firstVoice = voicesQuery.data?.[0];
-    if (firstVoice && !voicesQuery.data?.some((voice) => voice.id === selectedVoiceId)) {
+    const firstVoice = voicesQuery.data?.find((voice) => voice.available);
+    if (firstVoice && !voicesQuery.data?.some((voice) => voice.id === selectedVoiceId && voice.available)) {
       setSelectedVoiceId(firstVoice.id);
     }
   }, [selectedVoiceId, voicesQuery.data]);
@@ -114,6 +133,7 @@ export default function EpubReaderWithTTS({ file, onClose }: Props) {
     setParagraphs([]);
     setActiveIndex(0);
     setIsPlaying(false);
+    setActiveWordIndex(null);
     setLoadError(null);
     void extractParagraphs(file)
       .then((value) => {
@@ -130,6 +150,8 @@ export default function EpubReaderWithTTS({ file, onClose }: Props) {
 
   const current = paragraphs[activeIndex];
   const nextText = paragraphs[activeIndex + 1]?.text;
+  const currentTokens = useMemo(() => tokenizeText(current?.text ?? ""), [current?.text]);
+  const currentWordTimings = useMemo(() => buildWordTimings(currentTokens), [currentTokens]);
   const tts = useAudioTTS(
     current?.text ?? "",
     activeIndex,
@@ -142,24 +164,42 @@ export default function EpubReaderWithTTS({ file, onClose }: Props) {
     if (isPlaying && tts.data) {
       const audio = new Audio(tts.data);
       audio.playbackRate = speed;
+      let animationFrame = 0;
+      let cancelled = false;
+      const synchronizeWord = () => {
+        if (Number.isFinite(audio.duration) && audio.duration > 0) {
+          setActiveWordIndex(wordIndexAtProgress(currentWordTimings, audio.currentTime / audio.duration));
+        }
+        if (!audio.paused && !audio.ended) animationFrame = requestAnimationFrame(synchronizeWord);
+      };
       audioRef.current?.pause();
       audioRef.current = audio;
-      void audio.play().catch(() => {
+      setActiveWordIndex(currentWordTimings[0]?.wordIndex ?? null);
+      void audio.play().then(() => {
+        if (!cancelled) animationFrame = requestAnimationFrame(synchronizeWord);
+      }).catch(() => {
         // Browser autoplay policies can reject playback after generation.
         // Do not leave the player looking as if it were still generating.
-        setIsPlaying(false);
+        if (!cancelled) {
+          setActiveWordIndex(null);
+          setIsPlaying(false);
+        }
       });
       audio.onended = () => {
+        cancelAnimationFrame(animationFrame);
+        setActiveWordIndex(null);
         tts.prefetchNext();
         if (activeIndex < paragraphs.length - 1) setActiveIndex((index) => index + 1);
         else setIsPlaying(false);
       };
       return () => {
+        cancelled = true;
+        cancelAnimationFrame(animationFrame);
         audio.pause();
         audio.onended = null;
       };
     }
-  }, [activeIndex, isPlaying, paragraphs.length, selectedVoiceId, speed, tts.data]);
+  }, [activeIndex, currentWordTimings, isPlaying, paragraphs.length, selectedVoiceId, speed, tts.data]);
 
   useEffect(() => {
     if (isPlaying && current) tts.prefetchNext();
@@ -174,17 +214,50 @@ export default function EpubReaderWithTTS({ file, onClose }: Props) {
 
   const pause = () => {
     audioRef.current?.pause();
+    setActiveWordIndex(null);
     setIsPlaying(false);
   };
 
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code !== "Space" || event.repeat) return;
+
+      const target = event.target as HTMLElement | null;
+      if (target?.closest("input, textarea, select, button, [contenteditable='true']")) return;
+
+      event.preventDefault();
+      if (isPlaying) {
+        audioRef.current?.pause();
+        setActiveWordIndex(null);
+        setIsPlaying(false);
+      } else if (current) {
+        setIsPlaying(true);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [current, isPlaying]);
+
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-slate-950 text-slate-100">
+    <div className={embedded
+      ? "flex h-[calc(100vh-112px)] min-h-[620px] min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e6ded2] bg-[#111827] text-slate-100 shadow-[0_14px_40px_rgba(58,39,12,.08)]"
+      : "fixed inset-0 z-50 flex flex-col bg-slate-950 text-slate-100"
+    }>
       <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
         <div className="min-w-0">
           <p className="truncate font-semibold">{file.name}</p>
-          <p className="text-xs text-slate-400">Lecteur EPUB + Piper TTS</p>
+          <p className="text-xs text-slate-400">Lecteur EPUB + Piper/Kokoro TTS</p>
         </div>
-        <button onClick={onClose} className="rounded-lg p-2 hover:bg-slate-800" aria-label="Fermer"><X /></button>
+        <div className="flex items-center gap-2">
+          {isPlaying ? (
+            <button onClick={pause} className="inline-flex h-10 items-center gap-2 rounded-lg bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500" aria-label="Pause"><Pause className="h-4 w-4" /> Pause</button>
+          ) : (
+            <button onClick={play} disabled={!current || tts.isLoading} className="inline-flex h-10 items-center gap-2 rounded-lg bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Lecture"><Play className="h-4 w-4" /> Lire</button>
+          )}
+          <span className="hidden text-xs text-slate-500 xl:inline">Espace</span>
+          <button onClick={onClose} className="rounded-lg p-2 hover:bg-slate-800" aria-label="Fermer"><X /></button>
+        </div>
       </header>
 
       <main className="flex-1 overflow-y-auto bg-slate-100 px-4 py-8 text-slate-900">
@@ -192,8 +265,12 @@ export default function EpubReaderWithTTS({ file, onClose }: Props) {
           {!paragraphs.length && !loadError && <p className="text-slate-500">Extraction des paragraphes…</p>}
           {loadError && <p className="text-red-600">{loadError}</p>}
           {visibleParagraphs.map((paragraph) => (
-            <p key={paragraph.id} className={`mb-5 rounded px-2 text-lg leading-8 transition-colors ${paragraph.id === current?.id ? "bg-amber-200 ring-2 ring-amber-400" : ""}`}>
-              {paragraph.text}
+            <p key={paragraph.id} className="mb-5 rounded px-2 text-lg leading-8">
+              {paragraph.id === current?.id
+                ? currentTokens.map((token, tokenIndex) => token.wordIndex === activeWordIndex
+                  ? <mark key={tokenIndex} className="rounded bg-amber-300 px-0.5 text-inherit transition-colors" aria-current="true">{token.text}</mark>
+                  : <span key={tokenIndex}>{token.text}</span>)
+                : paragraph.text}
             </p>
           ))}
         </article>
@@ -205,14 +282,14 @@ export default function EpubReaderWithTTS({ file, onClose }: Props) {
           {isPlaying ? <button onClick={pause} className="rounded-lg bg-indigo-600 p-3 hover:bg-indigo-500" aria-label="Pause"><Pause /></button> : <button onClick={play} disabled={!current || tts.isLoading} className="rounded-lg bg-indigo-600 p-3 hover:bg-indigo-500 disabled:opacity-50" aria-label="Lecture"><Play /></button>}
           <button onClick={() => setActiveIndex((index) => Math.min(paragraphs.length - 1, index + 1))} className="rounded-lg p-2 hover:bg-slate-800" aria-label="Suivant"><ChevronRight /></button>
           <span className="mx-2 text-sm text-slate-400">{activeIndex + 1} / {paragraphs.length || "…"}</span>
-          <label className="ml-auto flex items-center gap-2 text-sm text-slate-300"><Volume2 className="h-4 w-4" />
+          {!embedded && <label className="ml-auto flex items-center gap-2 text-sm text-slate-300"><Volume2 className="h-4 w-4" />
             <VoiceSelector voices={voicesQuery.data ?? []} selectedVoiceId={selectedVoiceId} onChange={setSelectedVoiceId} disabled={voicesQuery.isLoading} />
-          </label>
-          <label className="flex items-center gap-2 text-sm text-slate-300">Vitesse
+          </label>}
+          {!embedded && <label className="flex items-center gap-2 text-sm text-slate-300">Vitesse
             <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="rounded bg-slate-800 px-2 py-1"><option value="0.8">0.8×</option><option value="1">1×</option><option value="1.2">1.2×</option><option value="1.5">1.5×</option></select>
-          </label>
+          </label>}
           {tts.isLoading && <span className="text-xs text-amber-300">Génération…</span>}
-          {tts.isError && <span className="flex items-center gap-1 text-xs text-red-300"><AlertCircle className="h-4 w-4" /> Piper TTS indisponible</span>}
+          {tts.isError && <span className="flex items-center gap-1 text-xs text-red-300"><AlertCircle className="h-4 w-4" /> {tts.error instanceof Error ? tts.error.message : "Moteur vocal indisponible"}</span>}
           {tts.data && !isPlaying && <RotateCcw className="h-4 w-4 text-emerald-400" aria-label="Audio en cache" />}
         </div>
       </footer>

@@ -3,6 +3,7 @@ import { PHASE_DEVELOPMENT_SERVER } from "next/constants.js";
 /** @type {import('next').NextConfig} */
 const sharedConfig = {
   reactStrictMode: true,
+  output: "standalone",
 };
 
 export default function nextConfig(phase) {

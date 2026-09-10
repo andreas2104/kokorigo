@@ -5,14 +5,26 @@ using System.Text;
 
 namespace EpubLibrary.Services;
 
-public sealed class PiperTtsService : IPiperTtsService
+public sealed class PiperTtsService : ITtsEngine
 {
     private const int MaxTextLength = 20_000;
     private readonly ILogger<PiperTtsService> _logger;
     private readonly string _piperDirectory;
     private readonly string _binaryPath;
-    private readonly string _modelPath;
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
+
+    public string Id => "piper";
+
+    private static readonly IReadOnlyList<(string Id, string Model, TtsVoice Voice)> VoiceDefinitions =
+    [
+        ("ff_siwis", "fr_FR-siwis-medium.onnx", new("piper:ff_siwis", "piper", "Siwis", "fr-FR", "Voix française · Femme", "Voix française locale, légère et rapide", "fr_FR-siwis-medium")),
+        ("fr_FR-gilles-low", "fr_FR-gilles-low.onnx", new("piper:fr_FR-gilles-low", "piper", "Gilles", "fr-FR", "Voix française · Homme", "Voix française masculine (modèle Piper Gilles)", "fr_FR-gilles-low")),
+    ];
+
+    public IReadOnlyList<TtsVoice> Voices => VoiceDefinitions
+        .Where(item => File.Exists(Path.Combine(_piperDirectory, item.Model)) && File.Exists(Path.Combine(_piperDirectory, $"{item.Model}.json")))
+        .Select(item => item.Voice)
+        .ToArray();
 
     public PiperTtsService(
         IWebHostEnvironment environment,
@@ -23,7 +35,6 @@ public sealed class PiperTtsService : IPiperTtsService
         var configuredDirectory = configuration["Tts:PiperDirectory"] ?? "assets/tts/piper";
         _piperDirectory = ResolvePiperDirectory(environment, configuredDirectory);
         _binaryPath = Path.Combine(_piperDirectory, configuration["Tts:PiperBinary"] ?? "piper");
-        _modelPath = Path.Combine(_piperDirectory, configuration["Tts:Model"] ?? "fr_FR-siwis-medium.onnx");
     }
 
     public async Task<byte[]> SynthesizeAsync(
@@ -38,14 +49,17 @@ public sealed class PiperTtsService : IPiperTtsService
             throw new ArgumentException($"Le texte dépasse {MaxTextLength} caractères.", nameof(text));
         if (speed is < 0.5 or > 2.0)
             throw new ArgumentOutOfRangeException(nameof(speed), "La vitesse doit être comprise entre 0.5 et 2.0.");
-        if (!string.Equals(voice, "ff_siwis", StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("Voix française non autorisée.", nameof(voice));
+        var localVoice = voice.StartsWith("piper:", StringComparison.OrdinalIgnoreCase) ? voice[6..] : voice;
+        var definition = VoiceDefinitions.FirstOrDefault(item => string.Equals(item.Id, localVoice, StringComparison.OrdinalIgnoreCase));
+        if (definition == default)
+            throw new ArgumentException("Voix Piper non autorisée.", nameof(voice));
+        var modelPath = Path.Combine(_piperDirectory, definition.Model);
 
-        EnsureAssets();
+        EnsureAssets(modelPath);
 
         var cacheDirectory = Path.Combine(_piperDirectory, "cache");
         Directory.CreateDirectory(cacheDirectory);
-        var cacheKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"{voice}:{speed}:{text}"))).ToLowerInvariant();
+        var cacheKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes($"piper:{voice}:{speed}:{text}"))).ToLowerInvariant();
         var cachedPath = Path.Combine(cacheDirectory, $"{cacheKey}.wav");
         if (File.Exists(cachedPath))
             return await File.ReadAllBytesAsync(cachedPath, cancellationToken);
@@ -61,7 +75,7 @@ public sealed class PiperTtsService : IPiperTtsService
             try
             {
                 var stopwatch = Stopwatch.StartNew();
-                await RunPiperAsync(text, speed, temporaryPath, cancellationToken);
+                await RunPiperAsync(text, speed, temporaryPath, modelPath, cancellationToken);
                 var audio = await File.ReadAllBytesAsync(temporaryPath, cancellationToken);
                 File.Move(temporaryPath, cachedPath);
                 stopwatch.Stop();
@@ -80,7 +94,15 @@ public sealed class PiperTtsService : IPiperTtsService
         }
     }
 
-    private async Task RunPiperAsync(string text, double speed, string outputPath, CancellationToken cancellationToken)
+    public Task<bool> IsAvailableAsync(CancellationToken cancellationToken = default)
+    {
+        var available = File.Exists(_binaryPath)
+            && Voices.Count > 0
+            && (OperatingSystem.IsWindows() || new FileInfo(_binaryPath).UnixFileMode.HasFlag(UnixFileMode.UserExecute));
+        return Task.FromResult(available);
+    }
+
+    private async Task RunPiperAsync(string text, double speed, string outputPath, string modelPath, CancellationToken cancellationToken)
     {
         using var process = new Process
         {
@@ -97,7 +119,7 @@ public sealed class PiperTtsService : IPiperTtsService
             }
         };
         process.StartInfo.ArgumentList.Add("--model");
-        process.StartInfo.ArgumentList.Add(_modelPath);
+        process.StartInfo.ArgumentList.Add(modelPath);
         process.StartInfo.ArgumentList.Add("--output_file");
         process.StartInfo.ArgumentList.Add(outputPath);
         process.StartInfo.ArgumentList.Add("--length_scale");
@@ -141,12 +163,12 @@ public sealed class PiperTtsService : IPiperTtsService
             throw new InvalidOperationException($"Piper a échoué ({process.ExitCode}): {stderr.Trim()}");
     }
 
-    private void EnsureAssets()
+    private void EnsureAssets(string modelPath)
     {
         if (!File.Exists(_binaryPath))
             throw new FileNotFoundException($"Le binaire Piper est introuvable: {_binaryPath}", _binaryPath);
-        if (!File.Exists(_modelPath) || !File.Exists($"{_modelPath}.json"))
-            throw new FileNotFoundException($"Le modèle Piper ou son fichier .onnx.json est introuvable dans {_piperDirectory}.", _modelPath);
+        if (!File.Exists(modelPath) || !File.Exists($"{modelPath}.json"))
+            throw new FileNotFoundException($"Le modèle Piper ou son fichier .onnx.json est introuvable dans {_piperDirectory}.", modelPath);
         if (!OperatingSystem.IsWindows() && !new FileInfo(_binaryPath).UnixFileMode.HasFlag(UnixFileMode.UserExecute))
             throw new InvalidOperationException($"Le binaire Piper n'est pas exécutable: {_binaryPath} (chmod +x requis).");
     }

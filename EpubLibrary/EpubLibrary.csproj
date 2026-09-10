@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <None Include="../assets/tts/piper/**/*" Link="assets/tts/piper/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <None Include="../assets/tts/kokoro/**/*" Exclude="../assets/tts/kokoro/.venv/**/*;../assets/tts/kokoro/__pycache__/**/*" Link="assets/tts/kokoro/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

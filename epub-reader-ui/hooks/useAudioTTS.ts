@@ -17,11 +17,12 @@ export async function requestTtsAudio(text: string, options: TTSOptions): Promis
       body: JSON.stringify({ text, ...options }),
     });
   } catch {
-    throw new Error(`Service Piper indisponible (${TTS_API_URL})`);
+    throw new Error(`Service vocal indisponible (${TTS_API_URL})`);
   }
 
   if (!response.ok) {
-    throw new Error(`Erreur Piper (${response.status})`);
+    const detail = (await response.text()).trim();
+    throw new Error(detail || `Erreur de synthèse vocale (${response.status})`);
   }
 
   return URL.createObjectURL(await response.blob());

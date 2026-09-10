@@ -1,0 +1,12 @@
+.git
+.gitignore
+**/node_modules
+**/.next
+**/.next-dev
+**/test-results
+**/bin
+**/obj
+assets/tts/kokoro/.venv
+assets/tts/kokoro/__pycache__
+Dockerfile*
+docker-compose*.yml

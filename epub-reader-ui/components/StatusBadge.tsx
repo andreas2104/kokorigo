@@ -6,7 +6,7 @@ import { useBackendStatus, type BackendStatus } from "@/hooks/useBackendStatus";
 
 const LABELS: Record<BackendStatus, string> = {
   checking: "Vérification…",
-  connected: "Piper TTS · Connecté",
+  connected: "Service vocal · Connecté",
   offline: "Mode local",
 };
 
@@ -29,7 +29,7 @@ export default function StatusBadge() {
     <button
       type="button"
       onClick={() => void check()}
-      title="Cliquer pour revérifier la connexion au service Piper TTS"
+      title="Cliquer pour revérifier la connexion au service de synthèse vocale"
       className={cn(
         "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/60",
         STYLES[status],

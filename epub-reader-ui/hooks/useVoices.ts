@@ -16,5 +16,10 @@ export function useVoices() {
     queryFn: fetchVoices,
     staleTime: 5 * 60 * 1000,
     retry: 1,
+    // Torch takes a few seconds to import in the Docker image. Refresh the
+    // inventory until Kokoro's health endpoint becomes available.
+    refetchInterval: (query) => query.state.data?.some(
+      (voice) => voice.engine === "kokoro" && !voice.available,
+    ) ? 2_000 : false,
   });
 }

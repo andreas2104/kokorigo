@@ -14,6 +14,7 @@ import {
 import { useEffect } from "react";
 import { API_BASE_URL, TTS_API_URL } from "@/lib/config";
 import { cn } from "@/lib/utils";
+import { useVoices } from "@/hooks/useVoices";
 
 type Props = {
   onClose: () => void;
@@ -44,6 +45,10 @@ function Row({
 }
 
 export default function SettingsDialog({ onClose }: Props) {
+  const voicesQuery = useVoices();
+  const piperReady = voicesQuery.data?.some((voice) => voice.engine === "piper" && voice.available) ?? false;
+  const kokoroReady = voicesQuery.data?.some((voice) => voice.engine === "kokoro" && voice.available) ?? false;
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -84,9 +89,9 @@ export default function SettingsDialog({ onClose }: Props) {
         <div className="mt-6 flex items-center gap-3 rounded-2xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
           <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-400" aria-hidden="true" />
           <div className="min-w-0 text-sm">
-            <p className="font-semibold text-emerald-400">Piper TTS opérationnel</p>
+            <p className="font-semibold text-emerald-400">Service vocal opérationnel</p>
             <p className="text-xs text-emerald-300/70">
-              Modèle {PIPER_MODEL} · synthèse 100% locale (CPU)
+              Piper {piperReady ? "prêt" : "indisponible"} · Kokoro {kokoroReady ? "prêt" : "non démarré"}
             </p>
           </div>
         </div>
@@ -96,8 +101,8 @@ export default function SettingsDialog({ onClose }: Props) {
             <Headphones className="h-4 w-4" aria-hidden="true" /> Synthèse vocale
           </h3>
           <ul className="space-y-2.5">
-            <Row icon={<Volume2 className="h-4 w-4" />} label="Moteur" value="Piper TTS" />
-            <Row icon={<Cpu className="h-4 w-4" />} label="Modèle vocal" value={PIPER_MODEL} />
+            <Row icon={<Volume2 className="h-4 w-4" />} label="Moteurs" value="Piper TTS + Kokoro-82M" />
+            <Row icon={<Cpu className="h-4 w-4" />} label="Modèles vocaux" value={`${PIPER_MODEL} · Kokoro français + anglais`} />
             <Row icon={<Monitor className="h-4 w-4" />} label="Vitesse de lecture" value="1× · 1.25× · 1.5×" />
           </ul>
         </section>
@@ -108,7 +113,7 @@ export default function SettingsDialog({ onClose }: Props) {
           </h3>
           <ul className="space-y-2.5">
             <Row icon={<Server className="h-4 w-4" />} label="API de bibliothèque (C#)" value={API_BASE_URL} />
-            <Row icon={<Headphones className="h-4 w-4" />} label="API Piper TTS" value={TTS_API_URL} />
+            <Row icon={<Headphones className="h-4 w-4" />} label="API de synthèse vocale" value={TTS_API_URL} />
             <Row icon={<Database className="h-4 w-4" />} label="Stockage" value="Local · navigation + dossier serveur" />
           </ul>
         </section>
@@ -118,7 +123,7 @@ export default function SettingsDialog({ onClose }: Props) {
           <p className="text-xs leading-5 text-muted-foreground">
             Confidentialité : l'extraction du texte s'effectue dans votre
             navigateur. Seuls les paragraphes sélectionnés pour la lecture sont
-            envoyés au moteur Piper TTS local. Vos fichiers ne quittent jamais
+            envoyés au moteur vocal local sélectionné. Vos fichiers ne quittent jamais
             votre appareil.
           </p>
         </div>

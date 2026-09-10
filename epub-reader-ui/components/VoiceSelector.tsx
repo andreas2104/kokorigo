@@ -21,7 +21,8 @@ export default function VoiceSelector({ voices, selectedVoiceId, onChange, disab
   const selectedVoice = voices.find((voice) => voice.id === selectedVoiceId) ?? voices[0];
   const groupedVoices = useMemo(() => {
     return voices.reduce<Record<string, Voice[]>>((groups, voice) => {
-      (groups[voice.character || "Autres"] ??= []).push(voice);
+      const engine = voice.engine === "kokoro" ? "Kokoro" : "Piper";
+      (groups[`${engine} · ${voice.language}`] ??= []).push(voice);
       return groups;
     }, {});
   }, [voices]);
@@ -37,6 +38,7 @@ export default function VoiceSelector({ voices, selectedVoiceId, onChange, disab
   };
 
   const preview = async (voice: Voice) => {
+    if (!voice.available) return;
     if (previewingId === voice.id) {
       stopPreview();
       return;
@@ -45,8 +47,11 @@ export default function VoiceSelector({ voices, selectedVoiceId, onChange, disab
     setPreviewError(null);
     setPreviewingId(voice.id);
     try {
+      const previewText = voice.language.startsWith("en")
+        ? `Hello. I am ${voice.name}, a voice available for narrating your books.`
+        : `Bonjour. Je suis ${voice.name}, une voix disponible pour la narration de vos livres.`;
       const url = await requestTtsAudio(
-        `Bonjour. Je suis ${voice.name}, une voix disponible pour la narration de vos livres.`,
+        previewText,
         { voice: voice.id, speed: 1 },
       );
       previewUrlRef.current = url;
@@ -76,32 +81,36 @@ export default function VoiceSelector({ voices, selectedVoiceId, onChange, disab
       >
         <span className="min-w-0">
           <span className="block truncate font-medium">{selectedVoice?.name ?? "Choisir une voix"}</span>
-          <span className="block text-xs text-slate-400">{selectedVoice?.character ?? ""}</span>
+          <span className="block text-xs text-slate-400">
+            {selectedVoice ? `${selectedVoice.engine === "kokoro" ? "Kokoro" : "Piper"} · ${selectedVoice.language}` : ""}
+          </span>
         </span>
         <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
 
       {open && (
         <div className="absolute bottom-full right-0 z-20 mb-2 max-h-80 w-full overflow-y-auto rounded-xl border border-slate-700 bg-slate-900 p-2 shadow-2xl" role="listbox" aria-label="Voix et personnages">
-          {Object.entries(groupedVoices).map(([character, characterVoices]) => (
-            <div key={character}>
-              <p className="px-2 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{character}</p>
-              {characterVoices.map((voice) => (
-                <div key={voice.id} className="flex items-center gap-2 rounded-lg px-2 py-2 hover:bg-slate-800">
+          {Object.entries(groupedVoices).map(([group, groupVoices]) => (
+            <div key={group}>
+              <p className="px-2 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-500">{group}</p>
+              {groupVoices.map((voice) => (
+                <div key={voice.id} className={`flex items-center gap-2 rounded-lg px-2 py-2 ${voice.available ? "hover:bg-slate-800" : "opacity-45"}`}>
                   <button
                     type="button"
                     role="option"
                     aria-selected={voice.id === selectedVoiceId}
+                    disabled={!voice.available}
                     onClick={() => { onChange(voice.id); setOpen(false); setPreviewError(null); }}
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:cursor-not-allowed"
                   >
                     {voice.id === selectedVoiceId ? <Check className="h-4 w-4 shrink-0 text-indigo-400" /> : <span className="w-4" />}
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium">{voice.name}</span>
                       {voice.description && <span className="block truncate text-xs text-slate-400">{voice.description}</span>}
+                      {!voice.available && <span className="block text-xs text-amber-400">Moteur non démarré</span>}
                     </span>
                   </button>
-                  <button type="button" onClick={() => void preview(voice)} className="rounded-md p-1.5 text-slate-300 hover:bg-slate-700 hover:text-white" aria-label={`${previewingId === voice.id ? "Arrêter" : "Écouter"} un extrait de ${voice.name}`}>
+                  <button type="button" disabled={!voice.available} onClick={() => void preview(voice)} className="rounded-md p-1.5 text-slate-300 hover:bg-slate-700 hover:text-white disabled:cursor-not-allowed" aria-label={`${previewingId === voice.id ? "Arrêter" : "Écouter"} un extrait de ${voice.name}`}>
                     {previewingId === voice.id ? <Square className="h-4 w-4" /> : <Play className="h-4 w-4" />}
                   </button>
                 </div>

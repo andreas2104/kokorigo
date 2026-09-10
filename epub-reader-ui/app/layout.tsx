@@ -5,7 +5,7 @@ import Providers from "./providers";
 export const metadata: Metadata = {
   title: "Kokorigo — Bibliothèque EPUB",
   description:
-    "Application éducative de lecture et d'écoute de livres EPUB, 100% locale avec synthèse vocale Piper TTS",
+    "Application éducative de lecture et d'écoute de livres EPUB, 100% locale avec synthèse vocale Piper et Kokoro TTS",
 };
 
 export default function RootLayout({

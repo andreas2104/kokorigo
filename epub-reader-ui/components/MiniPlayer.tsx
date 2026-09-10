@@ -35,7 +35,7 @@ export default function MiniPlayer({ book, onClose }: Props) {
   const [currentTime, setCurrentTime] = useState(0);
   const [speed, setSpeed] = useState(1);
   const [volume, setVolume] = useState(80);
-  const [voiceId, setVoiceId] = useState("ff_siwis");
+  const [voiceId, setVoiceId] = useState("piper:ff_siwis");
 
   const currentVoice = useMemo(
     () => voices.find((voice) => voice.id === voiceId) ?? voices[0],
@@ -43,8 +43,8 @@ export default function MiniPlayer({ book, onClose }: Props) {
   );
 
   useEffect(() => {
-    const first = voices[0];
-    if (first && !voices.some((voice) => voice.id === voiceId)) {
+    const first = voices.find((voice) => voice.available);
+    if (first && !voices.some((voice) => voice.id === voiceId && voice.available)) {
       setVoiceId(first.id);
     }
   }, [voices, voiceId]);
@@ -161,7 +161,7 @@ export default function MiniPlayer({ book, onClose }: Props) {
         <select
           value={voiceId}
           onChange={(event) => setVoiceId(event.target.value)}
-          aria-label="Voix Piper TTS"
+          aria-label="Voix de synthèse"
           className={cn(
             "h-9 max-w-[8.5rem] rounded-xl border border-border bg-card px-2 text-xs font-medium",
             "text-foreground focus:border-primary focus:outline-none",
@@ -169,8 +169,8 @@ export default function MiniPlayer({ book, onClose }: Props) {
         >
           {voices.length > 0
             ? voices.map((voice) => (
-                <option key={voice.id} value={voice.id}>
-                  {voice.name}
+                <option key={voice.id} value={voice.id} disabled={!voice.available}>
+                  {voice.engine === "kokoro" ? "Kokoro" : "Piper"} · {voice.name} · {voice.language}{voice.available ? "" : " (indisponible)"}
                 </option>
               ))
             : (

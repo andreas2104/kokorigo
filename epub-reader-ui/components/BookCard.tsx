@@ -107,7 +107,7 @@ export default function BookCard({ book, index, onListen, onResume, onDelete }: 
           <button
             type="button"
             onClick={() => onListen(book)}
-            aria-label={`Écouter ${book.title} avec Piper TTS`}
+            aria-label={`Écouter ${book.title} avec la synthèse vocale`}
             className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border bg-muted/40 text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
           >
             <Headphones className="h-4 w-4" aria-hidden="true" />

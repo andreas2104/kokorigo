@@ -1,3 +1,4 @@
+using EpubLibrary.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EpubLibrary.Controllers;
@@ -6,24 +7,13 @@ namespace EpubLibrary.Controllers;
 [Route("api/v1/voices")]
 public sealed class VoicesController : ControllerBase
 {
-    [HttpGet]
-    public ActionResult<IReadOnlyList<VoiceDescription>> GetAvailableVoices()
-    {
-        return Ok(new[]
-        {
-            new VoiceDescription(
-                "ff_siwis",
-                "Siwis",
-                "Femme",
-                "Voix française naturelle, qualité moyenne",
-                "fr_FR-siwis-medium"),
-        });
-    }
+    private readonly ITtsService _tts;
 
-    public sealed record VoiceDescription(
-        string Id,
-        string Name,
-        string Character,
-        string Description,
-        string Model);
+    public VoicesController(ITtsService tts) => _tts = tts;
+
+    [HttpGet]
+    public async Task<ActionResult<IReadOnlyList<TtsVoice>>> GetAvailableVoices(CancellationToken cancellationToken)
+    {
+        return Ok(await _tts.GetVoicesAsync(cancellationToken));
+    }
 }

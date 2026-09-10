@@ -1,0 +1,16 @@
+{
+	auto_https off
+	admin off
+}
+
+:3005 {
+	route {
+		reverse_proxy /api/* 127.0.0.1:5055
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

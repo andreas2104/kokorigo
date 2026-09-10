@@ -28,6 +28,29 @@ test("lit un EPUB après sélection et termine l'extraction", async ({ page }) =
   await expect(page.getByText("1 / 2")).toBeVisible();
 });
 
+test("démarre la lecture avec la touche espace", async ({ page }) => {
+  await page.route("**/api/v1/tts", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "audio/wav",
+      body: Buffer.alloc(44),
+    });
+  });
+  await page.goto("/");
+  await page.getByLabel("Choisir un fichier EPUB").setInputFiles({
+    name: "test.epub",
+    mimeType: "application/epub+zip",
+    buffer: await makeTestEpub(),
+  });
+  await expect(page.getByText("Ce texte confirme que le fichier EPUB est lu.")).toBeVisible();
+
+  const ttsRequest = page.waitForRequest((request) =>
+    request.url().includes("/api/v1/tts") && request.method() === "POST",
+  );
+  await page.keyboard.press("Space");
+  await ttsRequest;
+});
+
 test("lit un EPUB réel avec Piper et reçoit un WAV français", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("Choisir un fichier EPUB").setInputFiles({
