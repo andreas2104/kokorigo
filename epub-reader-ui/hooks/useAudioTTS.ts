@@ -3,6 +3,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import { TTS_API_URL } from "@/lib/config";
+import { sanitizeTextForSpeech } from "@/lib/speech-text";
 
 export type TTSOptions = {
   voice: string;
@@ -10,12 +11,14 @@ export type TTSOptions = {
 };
 
 export async function requestTtsAudio(text: string, options: TTSOptions, signal?: AbortSignal): Promise<string> {
+  const speechText = sanitizeTextForSpeech(text);
+  if (!speechText) throw new Error("Aucun texte lisible pour la synthèse vocale.");
   let response: Response;
   try {
     response = await fetch(`${TTS_API_URL}/api/v1/tts`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text, ...options }),
+      body: JSON.stringify({ text: speechText, ...options }),
       signal,
     });
   } catch {

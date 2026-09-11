@@ -16,6 +16,7 @@ import { useAudioTTS } from "@/hooks/useAudioTTS";
 import { useVoices } from "@/hooks/useVoices";
 import VoiceSelector from "@/components/VoiceSelector";
 import { buildWordTimings, tokenizeText, wordIndexAtProgress } from "@/lib/word-timing";
+import { sanitizeTextForSpeech } from "@/lib/speech-text";
 
 type Paragraph = { id: number; text: string };
 type ReaderPage = { startIndex: number; paragraphs: Paragraph[] };
@@ -44,7 +45,7 @@ function splitParagraphs(html: string, startAt: number): Paragraph[] {
       id: startAt + offset,
       text: (element.textContent ?? "").replace(/\s+/g, " ").trim(),
     }))
-    .filter((paragraph) => paragraph.text.length > 0);
+    .filter((paragraph) => paragraph.text.length > 0 && sanitizeTextForSpeech(paragraph.text).length > 0);
 }
 
 async function extractParagraphs(file: File): Promise<Paragraph[]> {
@@ -251,7 +252,10 @@ export default function EpubReaderWithTTS({
   const currentTokens = useMemo(() => tokenizeText(current?.text ?? ""), [current?.text]);
   const currentSpeechTokens = useMemo(() => {
     const startTokenIndex = currentTokens.findIndex((token) => token.wordIndex === readingStartWordIndex);
-    return startTokenIndex >= 0 ? currentTokens.slice(startTokenIndex) : currentTokens;
+    const selectedTokens = startTokenIndex >= 0 ? currentTokens.slice(startTokenIndex) : currentTokens;
+    return selectedTokens
+      .map((token) => token.wordIndex === null ? token : { ...token, text: sanitizeTextForSpeech(token.text) })
+      .filter((token) => token.wordIndex === null || token.text.length > 0);
   }, [currentTokens, readingStartWordIndex]);
   const currentSpeechText = useMemo(
     () => currentSpeechTokens.map((token) => token.text).join(""),
