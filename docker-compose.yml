@@ -8,6 +8,8 @@ services:
       - kokorigo-library:/data/library
       - kokorigo-models:/data/models
       - kokorigo-tts-cache:/data/cache
+    networks:
+      - npm-network
     restart: unless-stopped
 
 volumes:

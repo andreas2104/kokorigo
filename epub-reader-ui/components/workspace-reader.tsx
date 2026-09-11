@@ -17,10 +17,11 @@ import {
   Upload,
   Volume2,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import EpubReaderWithTTS from "@/components/EpubReaderWithTTS";
 import { requestTtsAudio } from "@/hooks/useAudioTTS";
-import { downloadBook, useBooks, useLibraryActions } from "@/hooks/useBooks";
+import { useBooks, useLibraryActions } from "@/hooks/useBooks";
 import { useVoices } from "@/hooks/useVoices";
 import type { BookItem } from "@/types/book";
 
@@ -31,6 +32,7 @@ function initials(title: string) {
 }
 
 export default function WorkspaceReader() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const previewAudioRef = useRef<HTMLAudioElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
@@ -81,17 +83,11 @@ export default function WorkspaceReader() {
     }
   };
 
-  const openBook = async (book: BookItem) => {
+  const openBook = (book: BookItem) => {
     setBusyBookId(book.id);
     setError(null);
-    try {
-      const downloaded = await downloadBook(book.id);
-      setFile(new File([downloaded], `${book.title}.epub`, { type: downloaded.type }));
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Impossible d’ouvrir ce livre.");
-    } finally {
-      setBusyBookId(null);
-    }
+    const params = new URLSearchParams({ bookId: String(book.id), title: book.title });
+    router.push(`/reader?${params.toString()}`);
   };
 
   const deleteBook = async (book: BookItem) => {
@@ -156,7 +152,7 @@ export default function WorkspaceReader() {
             {!booksQuery.isLoading && !booksQuery.isError && !books.length && <div className="grid flex-1 place-items-center px-4 text-center text-sm leading-6 text-[#768096]">{query ? "Aucun résultat." : "Aucun livre importé."}</div>}
             {books.map((book, index) => (
               <div key={book.id} className="group flex gap-3 rounded-xl border border-[#ece7df] bg-white p-2 transition hover:border-[#e9c895] hover:shadow-sm">
-                <button type="button" onClick={() => void openBook(book)} disabled={busyBookId !== null} className="flex min-w-0 flex-1 gap-3 text-left disabled:cursor-wait">
+                <button type="button" onClick={() => openBook(book)} disabled={busyBookId !== null} className="flex min-w-0 flex-1 gap-3 text-left disabled:cursor-wait">
                   <span className={`grid h-[76px] w-[55px] shrink-0 place-items-center overflow-hidden rounded-lg text-sm font-bold ${index % 3 === 0 ? "bg-[#dae4e8] text-[#345268]" : index % 3 === 1 ? "bg-[#efe0ce] text-[#70491f]" : "bg-[#dce8df] text-[#24523e]"}`}>
                     {book.coverUrl ? <img src={book.coverUrl} alt="" className="h-full w-full object-cover" /> : initials(book.title)}
                   </span>

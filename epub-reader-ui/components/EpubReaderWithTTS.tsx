@@ -19,8 +19,10 @@ import { buildWordTimings, tokenizeText, wordIndexAtProgress } from "@/lib/word-
 
 type Paragraph = { id: number; text: string };
 type ReaderPage = { startIndex: number; paragraphs: Paragraph[] };
+type ReadingPosition = { paragraphIndex: number; wordIndex: number };
 
 const PAGE_CHARACTER_TARGET = 1800;
+const READING_POSITION_PREFIX = "kokorigo:reading-position";
 
 type Props = {
   file: File;
@@ -122,6 +124,28 @@ function paginateParagraphs(paragraphs: Paragraph[]): ReaderPage[] {
   return pages;
 }
 
+function readingPositionKey(file: File) {
+  return `${READING_POSITION_PREFIX}:${encodeURIComponent(file.name)}:${file.size}`;
+}
+
+function loadReadingPosition(file: File): ReadingPosition | null {
+  try {
+    const value = JSON.parse(localStorage.getItem(readingPositionKey(file)) ?? "null") as Partial<ReadingPosition> | null;
+    if (!value || !Number.isInteger(value.paragraphIndex) || !Number.isInteger(value.wordIndex)) return null;
+    return { paragraphIndex: value.paragraphIndex as number, wordIndex: value.wordIndex as number };
+  } catch {
+    return null;
+  }
+}
+
+function saveReadingPosition(file: File, position: ReadingPosition) {
+  try {
+    localStorage.setItem(readingPositionKey(file), JSON.stringify(position));
+  } catch {
+    // La lecture reste utilisable si le stockage local est désactivé.
+  }
+}
+
 export default function EpubReaderWithTTS({
   file,
   onClose,
@@ -140,9 +164,12 @@ export default function EpubReaderWithTTS({
   const [readingStartWordIndex, setReadingStartWordIndex] = useState(0);
   const [pageInput, setPageInput] = useState("1");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [readingReminderPosition, setReadingReminderPosition] = useState<ReadingPosition | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const readingPaneRef = useRef<HTMLElement | null>(null);
   const activeWordRef = useRef<HTMLButtonElement | null>(null);
+  const positionRef = useRef<ReadingPosition>({ paragraphIndex: 0, wordIndex: 0 });
+  const positionReadyRef = useRef(false);
   const voicesQuery = useVoices();
   const selectedVoiceId = voiceId ?? internalVoiceId;
   const speed = playbackSpeed ?? internalSpeed;
@@ -158,6 +185,7 @@ export default function EpubReaderWithTTS({
 
   useEffect(() => {
     let cancelled = false;
+    positionReadyRef.current = false;
     setParagraphs([]);
     setActiveIndex(0);
     setIsPlaying(false);
@@ -165,9 +193,21 @@ export default function EpubReaderWithTTS({
     setReadingStartWordIndex(0);
     setPageInput("1");
     setLoadError(null);
+    setReadingReminderPosition(null);
     void extractParagraphs(file)
       .then((value) => {
-        if (!cancelled) setParagraphs(value);
+        if (cancelled) return;
+        const savedPosition = loadReadingPosition(file);
+        const paragraphIndex = Math.min(value.length - 1, Math.max(0, savedPosition?.paragraphIndex ?? 0));
+        const wordCount = tokenizeText(value[paragraphIndex].text)
+          .filter((token) => token.wordIndex !== null).length;
+        const wordIndex = Math.min(Math.max(0, wordCount - 1), Math.max(0, savedPosition?.wordIndex ?? 0));
+        setParagraphs(value);
+        setActiveIndex(paragraphIndex);
+        setReadingStartWordIndex(wordIndex);
+        setActiveWordIndex(savedPosition ? wordIndex : null);
+        setReadingReminderPosition(savedPosition ? { paragraphIndex, wordIndex } : null);
+        positionReadyRef.current = true;
       })
       .catch(() => {
         if (!cancelled) setLoadError("Impossible de lire la structure de cet EPUB.");
@@ -177,6 +217,34 @@ export default function EpubReaderWithTTS({
       audioRef.current?.pause();
     };
   }, [file]);
+
+  positionRef.current = {
+    paragraphIndex: activeIndex,
+    wordIndex: activeWordIndex ?? readingStartWordIndex,
+  };
+
+  useEffect(() => {
+    const persistPosition = () => {
+      if (positionReadyRef.current) saveReadingPosition(file, positionRef.current);
+    };
+    window.addEventListener("pagehide", persistPosition);
+    return () => {
+      window.removeEventListener("pagehide", persistPosition);
+      persistPosition();
+    };
+  }, [file]);
+
+  useEffect(() => {
+    if (!isPlaying) return;
+    const timer = window.setInterval(() => saveReadingPosition(file, positionRef.current), 5000);
+    return () => window.clearInterval(timer);
+  }, [file, isPlaying]);
+
+  useEffect(() => {
+    if (!readingReminderPosition) return;
+    const timer = window.setTimeout(() => setReadingReminderPosition(null), 10000);
+    return () => window.clearTimeout(timer);
+  }, [readingReminderPosition]);
 
   const current = paragraphs[activeIndex];
   const nextText = paragraphs[activeIndex + 1]?.text;
@@ -225,13 +293,19 @@ export default function EpubReaderWithTTS({
       });
       audio.onended = () => {
         cancelAnimationFrame(animationFrame);
-        setActiveWordIndex(null);
         tts.prefetchNext();
         if (activeIndex < paragraphs.length - 1) {
+          saveReadingPosition(file, { paragraphIndex: activeIndex + 1, wordIndex: 0 });
+          setActiveWordIndex(null);
           setReadingStartWordIndex(0);
           setActiveIndex((index) => index + 1);
+        } else {
+          const finalWordIndex = currentWordTimings.at(-1)?.wordIndex ?? readingStartWordIndex;
+          saveReadingPosition(file, { paragraphIndex: activeIndex, wordIndex: finalWordIndex });
+          setReadingStartWordIndex(finalWordIndex);
+          setActiveWordIndex(finalWordIndex);
+          setIsPlaying(false);
         }
-        else setIsPlaying(false);
       };
       return () => {
         cancelled = true;
@@ -240,7 +314,7 @@ export default function EpubReaderWithTTS({
         audio.onended = null;
       };
     }
-  }, [activeIndex, currentWordTimings, isPlaying, paragraphs.length, selectedVoiceId, speed, tts.data]);
+  }, [activeIndex, currentWordTimings, file, isPlaying, paragraphs.length, readingStartWordIndex, selectedVoiceId, speed, tts.data]);
 
   useEffect(() => {
     if (isPlaying && current) tts.prefetchNext();
@@ -249,7 +323,7 @@ export default function EpubReaderWithTTS({
   useEffect(() => {
     const readingPane = readingPaneRef.current;
     const activeWord = activeWordRef.current;
-    if (!isPlaying || !readingPane || !activeWord) return;
+    if (!readingPane || !activeWord) return;
 
     const paneBounds = readingPane.getBoundingClientRect();
     const wordBounds = activeWord.getBoundingClientRect();
@@ -271,6 +345,15 @@ export default function EpubReaderWithTTS({
     activeIndex >= page.startIndex && activeIndex < page.startIndex + page.paragraphs.length,
   ));
   const visibleParagraphs = pages[pageIndex]?.paragraphs ?? [];
+  const reminderPageIndex = readingReminderPosition
+    ? pages.findIndex((page) =>
+      readingReminderPosition.paragraphIndex >= page.startIndex
+      && readingReminderPosition.paragraphIndex < page.startIndex + page.paragraphs.length,
+    )
+    : -1;
+  const reminderParagraphNumber = reminderPageIndex >= 0 && readingReminderPosition
+    ? readingReminderPosition.paragraphIndex - pages[reminderPageIndex].startIndex + 1
+    : 1;
 
   useEffect(() => {
     if (pages.length) setPageInput(String(pageIndex + 1));
@@ -283,6 +366,7 @@ export default function EpubReaderWithTTS({
     setReadingStartWordIndex(wordIndex);
     setActiveIndex(paragraphIndex);
     setIsPlaying(true);
+    saveReadingPosition(file, { paragraphIndex, wordIndex });
   };
 
   const goToPage = (nextPageIndex: number) => {
@@ -291,6 +375,7 @@ export default function EpubReaderWithTTS({
     setActiveWordIndex(null);
     setReadingStartWordIndex(0);
     setActiveIndex(page.startIndex);
+    saveReadingPosition(file, { paragraphIndex: page.startIndex, wordIndex: 0 });
     readingPaneRef.current?.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -312,10 +397,20 @@ export default function EpubReaderWithTTS({
   };
 
   const pause = () => {
+    const wordIndex = activeWordIndex ?? readingStartWordIndex;
     audioRef.current?.pause();
     void tts.cancel();
-    setActiveWordIndex(null);
+    setReadingStartWordIndex(wordIndex);
+    setActiveWordIndex(wordIndex);
     setIsPlaying(false);
+    saveReadingPosition(file, { paragraphIndex: activeIndex, wordIndex });
+  };
+
+  const close = () => {
+    audioRef.current?.pause();
+    void tts.cancel();
+    saveReadingPosition(file, positionRef.current);
+    onClose();
   };
 
   useEffect(() => {
@@ -327,10 +422,13 @@ export default function EpubReaderWithTTS({
 
       event.preventDefault();
       if (isPlaying) {
+        const wordIndex = activeWordIndex ?? readingStartWordIndex;
         audioRef.current?.pause();
         void tts.cancel();
-        setActiveWordIndex(null);
+        setReadingStartWordIndex(wordIndex);
+        setActiveWordIndex(wordIndex);
         setIsPlaying(false);
+        saveReadingPosition(file, { paragraphIndex: activeIndex, wordIndex });
       } else if (current) {
         setIsPlaying(true);
       }
@@ -338,11 +436,11 @@ export default function EpubReaderWithTTS({
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [current, isPlaying, tts.cancel]);
+  }, [activeIndex, activeWordIndex, current, file, isPlaying, readingStartWordIndex, tts.cancel]);
 
   return (
     <div className={embedded
-      ? "flex h-[calc(100vh-112px)] min-h-[620px] min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e6ded2] bg-[#111827] text-slate-100 shadow-[0_14px_40px_rgba(58,39,12,.08)]"
+      ? "relative flex h-[calc(100vh-112px)] min-h-[620px] min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e6ded2] bg-[#111827] text-slate-100 shadow-[0_14px_40px_rgba(58,39,12,.08)]"
       : "fixed inset-0 z-50 flex flex-col bg-slate-950 text-slate-100"
     }>
       <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
@@ -357,9 +455,16 @@ export default function EpubReaderWithTTS({
             <button onClick={play} disabled={!current || tts.isLoading} className="inline-flex h-10 items-center gap-2 rounded-lg bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Lecture"><Play className="h-4 w-4" /> Lire</button>
           )}
           <span className="hidden text-xs text-slate-500 xl:inline">Espace</span>
-          <button onClick={onClose} className="rounded-lg p-2 hover:bg-slate-800" aria-label="Fermer"><X /></button>
+          <button onClick={close} className="rounded-lg p-2 hover:bg-slate-800" aria-label="Fermer"><X /></button>
         </div>
       </header>
+
+      {readingReminderPosition && reminderPageIndex >= 0 && (
+        <div role="status" aria-live="polite" className="absolute left-1/2 top-20 z-20 flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-lg">
+          <span className="min-w-0 flex-1"><strong className="block">Dernière lecture</strong>Vous vous êtes arrêté à la page {reminderPageIndex + 1}, au paragraphe {reminderParagraphNumber}.</span>
+          <button type="button" onClick={() => setReadingReminderPosition(null)} className="rounded-md p-1 hover:bg-amber-100" aria-label="Fermer le rappel"><X className="h-4 w-4" /></button>
+        </div>
+      )}
 
       <main ref={readingPaneRef} className="flex-1 overflow-y-auto bg-slate-100 px-4 py-8 text-slate-900">
         <article className="mx-auto max-w-3xl rounded-xl bg-white p-6 shadow-sm sm:p-10">

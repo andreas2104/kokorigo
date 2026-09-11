@@ -28,6 +28,33 @@ test("lit un EPUB après sélection et termine l'extraction", async ({ page }) =
   await expect(page.getByText("Page 1 / 1")).toBeVisible();
 });
 
+test("ouvre directement la page de lecture depuis l’historique", async ({ page }) => {
+  const epub = await makeTestEpub();
+  await page.route("**/api/my-library**", async (route) => {
+    if (route.request().url().endsWith("/file/7")) {
+      await route.fulfill({ status: 200, contentType: "application/epub+zip", body: epub });
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([{
+        id: 7,
+        title: "Livre historique",
+        author: "Auteur test",
+        coverUrl: "",
+        fileName: "historique.epub",
+        addedAt: new Date().toISOString(),
+      }]),
+    });
+  });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: /Livre historique.*Lire/ }).click();
+  await expect(page).toHaveURL(/\/reader\?bookId=7/);
+  await expect(page.getByText("Ce texte confirme que le fichier EPUB est lu.")).toBeVisible();
+});
+
 test("commence la lecture au mot sélectionné", async ({ page }) => {
   let spokenText = "";
   await page.route("**/api/v1/tts", async (route) => {
@@ -61,6 +88,27 @@ test("va directement à la page saisie", async ({ page }) => {
   await page.getByLabel("Numéro de page").fill("2");
   await page.getByRole("button", { name: "Aller" }).click();
   await expect(page.getByText(/^Page 2 \/ \d+$/)).toBeVisible();
+});
+
+test("mémorise le dernier mot lu après la fermeture du livre", async ({ page }) => {
+  await page.route("**/api/v1/tts", async (route) => {
+    await route.fulfill({ status: 200, contentType: "audio/wav", body: Buffer.alloc(44) });
+  });
+  const buffer = await makeTestEpub();
+  const file = { name: "position.epub", mimeType: "application/epub+zip", buffer };
+  await page.goto("/");
+  await page.getByLabel("Choisir un fichier EPUB").setInputFiles(file);
+  await page.getByRole("button", { name: "Lire à partir de « confirme »" }).click();
+  await page.getByRole("button", { name: "Pause" }).first().click();
+  await page.getByRole("button", { name: "Fermer" }).click();
+  await expect.poll(() => page.evaluate(() =>
+    Object.entries(localStorage).find(([key]) => key.startsWith("kokorigo:reading-position"))?.[1],
+  )).toContain('"wordIndex":2');
+
+  await page.getByLabel("Choisir un fichier EPUB").setInputFiles(file);
+  await expect(page.getByRole("status")).toContainText("Vous vous êtes arrêté à la page 1, au paragraphe 2.");
+  await expect(page.getByRole("button", { name: "Lire à partir de « confirme »" }))
+    .toHaveAttribute("aria-current", "true");
 });
 
 test("démarre la lecture avec la touche espace", async ({ page }) => {
