@@ -460,14 +460,14 @@ export default function EpubReaderWithTTS({
       </header>
 
       {readingReminderPosition && reminderPageIndex >= 0 && (
-        <div role="status" aria-live="polite" className="absolute left-1/2 top-20 z-20 flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-lg">
+        <div role="status" aria-live="polite" className="absolute left-1/2 top-20 z-20 flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-lg dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
           <span className="min-w-0 flex-1"><strong className="block">Dernière lecture</strong>Vous vous êtes arrêté à la page {reminderPageIndex + 1}, au paragraphe {reminderParagraphNumber}.</span>
           <button type="button" onClick={() => setReadingReminderPosition(null)} className="rounded-md p-1 hover:bg-amber-100" aria-label="Fermer le rappel"><X className="h-4 w-4" /></button>
         </div>
       )}
 
-      <main ref={readingPaneRef} className="flex-1 overflow-y-auto bg-slate-100 px-4 py-8 text-slate-900">
-        <article className="mx-auto max-w-3xl rounded-xl bg-white p-6 shadow-sm sm:p-10">
+      <main ref={readingPaneRef} className="flex-1 overflow-y-auto bg-slate-100 px-4 py-8 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+        <article className="mx-auto max-w-3xl rounded-xl bg-white p-6 shadow-sm dark:bg-slate-900 sm:p-10">
           {!paragraphs.length && !loadError && <p className="text-slate-500">Extraction des paragraphes…</p>}
           {loadError && <p className="text-red-600">{loadError}</p>}
           {visibleParagraphs.map((paragraph, pageParagraphIndex) => {
@@ -484,7 +484,7 @@ export default function EpubReaderWithTTS({
                       key={tokenIndex}
                       type="button"
                       onClick={() => startReadingAt(paragraphIndex, token.wordIndex as number)}
-                      className={`cursor-pointer rounded px-0.5 text-left font-inherit transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 ${isActiveWord ? "bg-amber-300" : "hover:bg-amber-100"}`}
+                      className={`cursor-pointer rounded px-0.5 text-left font-inherit transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 ${isActiveWord ? "bg-amber-300 text-slate-950" : "hover:bg-amber-100 dark:hover:bg-slate-800"}`}
                       aria-current={isActiveWord ? "true" : undefined}
                       aria-label={`Lire à partir de « ${token.text} »`}
                     >

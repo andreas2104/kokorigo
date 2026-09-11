@@ -28,6 +28,19 @@ test("lit un EPUB après sélection et termine l'extraction", async ({ page }) =
   await expect(page.getByText("Page 1 / 1")).toBeVisible();
 });
 
+test("active et mémorise le mode sombre", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "light" });
+  await page.goto("/");
+
+  await page.getByRole("button", { name: "Activer le mode nuit" }).click();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(page.getByRole("button", { name: "Activer le mode jour" })).toBeVisible();
+
+  await page.reload();
+  await expect(page.locator("html")).toHaveClass(/dark/);
+  await expect(page.getByRole("button", { name: "Activer le mode jour" })).toBeVisible();
+});
+
 test("ouvre le lecteur dans le workspace depuis l’historique", async ({ page }) => {
   const epub = await makeTestEpub();
   await page.route("**/api/my-library**", async (route) => {
