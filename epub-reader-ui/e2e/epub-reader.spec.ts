@@ -28,7 +28,7 @@ test("lit un EPUB après sélection et termine l'extraction", async ({ page }) =
   await expect(page.getByText("Page 1 / 1")).toBeVisible();
 });
 
-test("ouvre directement la page de lecture depuis l’historique", async ({ page }) => {
+test("ouvre le lecteur dans le workspace depuis l’historique", async ({ page }) => {
   const epub = await makeTestEpub();
   await page.route("**/api/my-library**", async (route) => {
     if (route.request().url().endsWith("/file/7")) {
@@ -51,8 +51,11 @@ test("ouvre directement la page de lecture depuis l’historique", async ({ page
   await page.goto("/");
 
   await page.getByRole("button", { name: /Livre historique.*Lire/ }).click();
-  await expect(page).toHaveURL(/\/reader\?bookId=7/);
   await expect(page.getByText("Ce texte confirme que le fichier EPUB est lu.")).toBeVisible();
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "Bibliothèque" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Lecture vocale" })).toBeVisible();
+  await expect(page.getByText("Cliquez sur un mot pour lire à partir de cet endroit")).toBeVisible();
 });
 
 test("commence la lecture au mot sélectionné", async ({ page }) => {
