@@ -17,6 +17,11 @@ import { useVoices } from "@/hooks/useVoices";
 import VoiceSelector from "@/components/VoiceSelector";
 import { buildWordTimings, tokenizeText, wordIndexAtProgress } from "@/lib/word-timing";
 import { sanitizeTextForSpeech } from "@/lib/speech-text";
+import AccessibilityContextMenu, {
+  focusReaderZoomOnElement,
+  readerContentStyle,
+  useReaderAccessibilitySettings,
+} from "@/components/AccessibilityContextMenu";
 
 type Paragraph = { id: number; text: string };
 type ReaderPage = { startIndex: number; paragraphs: Paragraph[] };
@@ -166,6 +171,7 @@ export default function EpubReaderWithTTS({
   const [pageInput, setPageInput] = useState("1");
   const [loadError, setLoadError] = useState<string | null>(null);
   const [readingReminderPosition, setReadingReminderPosition] = useState<ReadingPosition | null>(null);
+  const [accessibilitySettings, setAccessibilitySettings] = useReaderAccessibilitySettings();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const readingPaneRef = useRef<HTMLElement | null>(null);
   const activeWordRef = useRef<HTMLButtonElement | null>(null);
@@ -329,6 +335,8 @@ export default function EpubReaderWithTTS({
     const activeWord = activeWordRef.current;
     if (!readingPane || !activeWord) return;
 
+    focusReaderZoomOnElement(activeWord);
+
     const paneBounds = readingPane.getBoundingClientRect();
     const wordBounds = activeWord.getBoundingClientRect();
     const upperReadingLimit = paneBounds.top + paneBounds.height * 0.3;
@@ -470,8 +478,9 @@ export default function EpubReaderWithTTS({
         </div>
       )}
 
-      <main ref={readingPaneRef} className="flex-1 overflow-y-auto bg-slate-100 px-4 py-8 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-        <article className="mx-auto max-w-3xl rounded-xl bg-white p-6 shadow-sm dark:bg-slate-900 sm:p-10">
+      <AccessibilityContextMenu settings={accessibilitySettings} onChange={setAccessibilitySettings} pointerTrackingEnabled={!isPlaying}>
+        <main ref={readingPaneRef} className="flex-1 overflow-y-auto bg-slate-100 px-4 py-8 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+          <article data-reader-content style={readerContentStyle(accessibilitySettings)} className="mx-auto max-w-3xl rounded-xl bg-white p-6 shadow-sm dark:bg-slate-900 sm:p-10">
           {!paragraphs.length && !loadError && <p className="text-slate-500">Extraction des paragraphes…</p>}
           {loadError && <p className="text-red-600">{loadError}</p>}
           {visibleParagraphs.map((paragraph, pageParagraphIndex) => {
@@ -499,8 +508,9 @@ export default function EpubReaderWithTTS({
               </p>
             );
           })}
-        </article>
-      </main>
+          </article>
+        </main>
+      </AccessibilityContextMenu>
 
       <footer className="border-t border-slate-800 bg-slate-950 px-4 py-3">
         <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2">

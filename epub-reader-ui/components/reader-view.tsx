@@ -13,6 +13,11 @@ import {
   Volume2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import AccessibilityContextMenu, {
+  focusReaderZoomOnElement,
+  readerContentStyle,
+  useReaderAccessibilitySettings,
+} from "@/components/AccessibilityContextMenu";
 
 type Token = { id: string; text: string };
 type Sentence = { id: string; tokens: Token[] };
@@ -56,7 +61,9 @@ export default function ReaderView({
   const [speed, setSpeed] = useState(1);
   const [voice, setVoice] = useState(VOICES[0]);
   const [pitch, setPitch] = useState(0);
+  const [accessibilitySettings, setAccessibilitySettings] = useReaderAccessibilitySettings();
   const activeSentenceRef = useRef<HTMLParagraphElement>(null);
+  const activeWordRef = useRef<HTMLButtonElement>(null);
   const totalWords = useMemo(() => DEMO_SENTENCES.reduce((sum, sentence) => sum + sentence.tokens.length, 0), []);
   const readWords = DEMO_SENTENCES.slice(0, sentenceIndex).reduce((sum, sentence) => sum + sentence.tokens.length, 0) + wordIndex;
   const progress = Math.round((readWords / totalWords) * 100);
@@ -83,6 +90,10 @@ export default function ReaderView({
   useEffect(() => {
     activeSentenceRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [sentenceIndex]);
+
+  useEffect(() => {
+    focusReaderZoomOnElement(activeWordRef.current);
+  }, [sentenceIndex, wordIndex]);
 
   const jumpTo = (nextSentence: number, nextWord: number) => {
     setSentenceIndex(nextSentence);
@@ -119,8 +130,9 @@ export default function ReaderView({
         </div>
       </header>
 
-      <main className="relative z-0 flex-1 overflow-y-auto px-5 pb-48 pt-14 sm:px-8 sm:pt-20">
-        <article className="mx-auto max-w-3xl">
+      <AccessibilityContextMenu settings={accessibilitySettings} onChange={setAccessibilitySettings} pointerTrackingEnabled={!isPlaying}>
+        <main className="relative z-0 flex-1 overflow-y-auto px-5 pb-48 pt-14 sm:px-8 sm:pt-20">
+          <article data-reader-content style={readerContentStyle(accessibilitySettings)} className="mx-auto max-w-3xl">
           <div className="mb-14 text-center">
             <p className="mb-3 text-xs font-semibold uppercase tracking-[0.28em] text-slate-500">Extrait audio synchronisé</p>
             <h2 className="font-serif text-3xl font-medium tracking-tight text-white sm:text-4xl">La promesse</h2>
@@ -140,6 +152,7 @@ export default function ReaderView({
                     const isCurrentWord = isActive && currentWord === wordIndex;
                     return (
                       <button
+                        ref={isCurrentWord ? activeWordRef : undefined}
                         key={token.id}
                         onClick={() => jumpTo(currentSentence, currentWord)}
                         className={`mr-[0.28em] inline rounded-md px-0.5 text-left transition-all duration-200 hover:bg-violet-300/20 focus:outline-none focus:ring-2 focus:ring-violet-400/60 ${isCurrentWord ? "bg-gradient-to-r from-violet-500 to-sky-500 px-1 text-white shadow-[0_0_22px_rgba(139,92,246,0.55)]" : "hover:text-white"}`}
@@ -151,8 +164,9 @@ export default function ReaderView({
               );
             })}
           </div>
-        </article>
-      </main>
+          </article>
+        </main>
+      </AccessibilityContextMenu>
 
       <footer className="fixed bottom-0 left-0 right-0 z-20 border-t border-white/[0.08] bg-[#0c111d]/95 px-4 pb-5 pt-3 shadow-[0_-20px_60px_rgba(0,0,0,0.35)] backdrop-blur-2xl sm:px-8">
         <div className="mx-auto max-w-6xl">
