@@ -9,6 +9,9 @@
 # production
 /build
 
+# binaires WebAssembly copiés au build (voir scripts/copy-piper-assets.mjs)
+/public/piper/
+
 # misc
 .DS_Store
 *.pem

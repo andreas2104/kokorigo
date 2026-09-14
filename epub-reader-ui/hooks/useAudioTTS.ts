@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo } from "react";
 import { TTS_API_URL } from "@/lib/config";
 import { sanitizeTextForSpeech } from "@/lib/speech-text";
+import { isLocalPiperVoice, synthesizeWithLocalPiper } from "@/lib/piper-local";
 
 export type TTSOptions = {
   voice: string;
@@ -13,6 +14,12 @@ export type TTSOptions = {
 export async function requestTtsAudio(text: string, options: TTSOptions, signal?: AbortSignal): Promise<string> {
   const speechText = sanitizeTextForSpeech(text);
   if (!speechText) throw new Error("Aucun texte lisible pour la synthèse vocale.");
+
+  // Voix Piper embarquée : la synthèse a lieu dans le navigateur, sans réseau.
+  if (isLocalPiperVoice(options.voice)) {
+    return URL.createObjectURL(await synthesizeWithLocalPiper(speechText));
+  }
+
   let response: Response;
   try {
     response = await fetch(`${TTS_API_URL}/api/v1/tts`, {

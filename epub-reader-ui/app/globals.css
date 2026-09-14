@@ -50,6 +50,8 @@
 
 html {
   color-scheme: light;
+  /* Empêche iOS d'agrandir le texte en paysage. */
+  -webkit-text-size-adjust: 100%;
 }
 
 html.dark {

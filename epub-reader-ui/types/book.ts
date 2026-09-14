@@ -5,6 +5,7 @@ export type ReadingProgress = {
 };
 
 export type BookItem = {
+  // Identifiant d'affichage : négatif pour une copie locale, positif côté API.
   id: number;
   title: string;
   author: string;
@@ -14,6 +15,9 @@ export type BookItem = {
   epubUrl?: string;
   format?: "epub";
   progress?: ReadingProgress;
+  localId?: number;
+  serverId?: number;
+  offline?: boolean;
 };
 
 export { API_BASE_URL, TTS_API_URL, storedBookUrl } from "@/lib/config";

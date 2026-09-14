@@ -74,6 +74,8 @@ COPY assets/tts/kokoro/server.py ./kokoro/server.py
 COPY assets/tts/f5tts/ ./f5tts/
 COPY --from=web-build /src/epub-reader-ui/.next/standalone ./web
 COPY --from=web-build /src/epub-reader-ui/.next/static ./web/.next/static
+# La sortie standalone n'embarque pas public/ : manifeste PWA, service worker et polices.
+COPY --from=web-build /src/epub-reader-ui/public ./web/public
 COPY Caddyfile ./Caddyfile
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN apt-get update \

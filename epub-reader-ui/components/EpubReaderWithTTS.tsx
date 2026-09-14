@@ -16,6 +16,7 @@ import { useAudioTTS } from "@/hooks/useAudioTTS";
 import { useVoices } from "@/hooks/useVoices";
 import VoiceSelector from "@/components/VoiceSelector";
 import { buildWordTimings, tokenizeText, wordIndexAtProgress } from "@/lib/word-timing";
+import { isDeviceVoice, speakWithDevice } from "@/lib/device-speech";
 import { sanitizeTextForSpeech } from "@/lib/speech-text";
 import AccessibilityContextMenu, {
   focusReaderZoomOnElement,
@@ -170,6 +171,7 @@ export default function EpubReaderWithTTS({
   const [readingStartWordIndex, setReadingStartWordIndex] = useState(0);
   const [pageInput, setPageInput] = useState("1");
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [speechError, setSpeechError] = useState<string | null>(null);
   const [readingReminderPosition, setReadingReminderPosition] = useState<ReadingPosition | null>(null);
   const [accessibilitySettings, setAccessibilitySettings] = useReaderAccessibilitySettings();
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -179,6 +181,8 @@ export default function EpubReaderWithTTS({
   const positionReadyRef = useRef(false);
   const voicesQuery = useVoices();
   const selectedVoiceId = voiceId ?? internalVoiceId;
+  // Une voix de l'appareil parle sans réseau : le serveur n'est pas sollicité.
+  const usesDeviceVoice = isDeviceVoice(selectedVoiceId);
   const speed = playbackSpeed ?? internalSpeed;
   const setSelectedVoiceId = onVoiceChange ?? setInternalVoiceId;
   const setSpeed = onPlaybackSpeedChange ?? setInternalSpeed;
@@ -200,6 +204,7 @@ export default function EpubReaderWithTTS({
     setReadingStartWordIndex(0);
     setPageInput("1");
     setLoadError(null);
+    setSpeechError(null);
     setReadingReminderPosition(null);
     void extractParagraphs(file)
       .then((value) => {
@@ -273,8 +278,24 @@ export default function EpubReaderWithTTS({
     activeIndex,
     nextText,
     { voice: selectedVoiceId, speed },
-    isPlaying,
+    isPlaying && !usesDeviceVoice,
   );
+
+  // Fin d'un paragraphe : enchaîner le suivant, quel que soit le moteur vocal.
+  const finishParagraph = () => {
+    if (activeIndex < paragraphs.length - 1) {
+      saveReadingPosition(file, { paragraphIndex: activeIndex + 1, wordIndex: 0 });
+      setActiveWordIndex(null);
+      setReadingStartWordIndex(0);
+      setActiveIndex((index) => index + 1);
+    } else {
+      const finalWordIndex = currentWordTimings.at(-1)?.wordIndex ?? readingStartWordIndex;
+      saveReadingPosition(file, { paragraphIndex: activeIndex, wordIndex: finalWordIndex });
+      setReadingStartWordIndex(finalWordIndex);
+      setActiveWordIndex(finalWordIndex);
+      setIsPlaying(false);
+    }
+  };
 
   useEffect(() => {
     if (isPlaying && tts.data) {
@@ -304,18 +325,7 @@ export default function EpubReaderWithTTS({
       audio.onended = () => {
         cancelAnimationFrame(animationFrame);
         tts.prefetchNext();
-        if (activeIndex < paragraphs.length - 1) {
-          saveReadingPosition(file, { paragraphIndex: activeIndex + 1, wordIndex: 0 });
-          setActiveWordIndex(null);
-          setReadingStartWordIndex(0);
-          setActiveIndex((index) => index + 1);
-        } else {
-          const finalWordIndex = currentWordTimings.at(-1)?.wordIndex ?? readingStartWordIndex;
-          saveReadingPosition(file, { paragraphIndex: activeIndex, wordIndex: finalWordIndex });
-          setReadingStartWordIndex(finalWordIndex);
-          setActiveWordIndex(finalWordIndex);
-          setIsPlaying(false);
-        }
+        finishParagraph();
       };
       return () => {
         cancelled = true;
@@ -326,9 +336,26 @@ export default function EpubReaderWithTTS({
     }
   }, [activeIndex, currentWordTimings, file, isPlaying, paragraphs.length, readingStartWordIndex, selectedVoiceId, speed, tts.data]);
 
+  // Lecture hors ligne : la synthèse vocale du téléphone remplace l'API.
   useEffect(() => {
-    if (isPlaying && current) tts.prefetchNext();
-  }, [activeIndex, current, isPlaying, speed, selectedVoiceId]);
+    if (!isPlaying || !usesDeviceVoice || !currentSpeechText) return;
+    return speakWithDevice({
+      text: currentSpeechText,
+      tokens: currentSpeechTokens,
+      voiceId: selectedVoiceId,
+      rate: speed,
+      onWordIndex: setActiveWordIndex,
+      onEnd: finishParagraph,
+      onError: (message) => {
+        setSpeechError(message);
+        setIsPlaying(false);
+      },
+    });
+  }, [activeIndex, currentSpeechText, isPlaying, selectedVoiceId, speed, usesDeviceVoice]);
+
+  useEffect(() => {
+    if (isPlaying && current && !usesDeviceVoice) tts.prefetchNext();
+  }, [activeIndex, current, isPlaying, speed, selectedVoiceId, usesDeviceVoice]);
 
   useEffect(() => {
     const readingPane = readingPaneRef.current;
@@ -405,6 +432,7 @@ export default function EpubReaderWithTTS({
 
   const play = () => {
     if (!current) return;
+    setSpeechError(null);
     setIsPlaying(true);
   };
 
@@ -452,19 +480,20 @@ export default function EpubReaderWithTTS({
 
   return (
     <div className={embedded
-      ? "relative flex h-[calc(100vh-112px)] min-h-[620px] min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e6ded2] bg-[#111827] text-slate-100 shadow-[0_14px_40px_rgba(58,39,12,.08)]"
+      ? "relative flex h-[calc(100vh-5.5rem)] min-h-[24rem] min-w-0 flex-col overflow-hidden rounded-2xl border border-[#e6ded2] bg-[#111827] text-slate-100 shadow-[0_14px_40px_rgba(58,39,12,.08)] supports-[height:100dvh]:h-[calc(100dvh-5.5rem)] lg:h-[calc(100vh-112px)] lg:min-h-[620px] lg:supports-[height:100dvh]:h-[calc(100vh-112px)]"
       : "fixed inset-0 z-50 flex flex-col bg-slate-950 text-slate-100"
     }>
-      <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+      <header className="flex items-center justify-between gap-2 border-b border-slate-800 px-3 py-2.5 sm:px-4 sm:py-3">
         <div className="min-w-0">
-          <p className="truncate font-semibold">{file.name}</p>
-          <p className="text-xs text-slate-400">Cliquez sur un mot pour lire à partir de cet endroit</p>
+          <p className="truncate text-sm font-semibold sm:text-base">{file.name}</p>
+          <p className="hidden text-xs text-slate-400 sm:block">Cliquez sur un mot pour lire à partir de cet endroit</p>
+          <p className="text-xs text-slate-400 sm:hidden">Touchez un mot pour lire à partir de cet endroit</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
           {isPlaying ? (
-            <button onClick={pause} className="inline-flex h-10 items-center gap-2 rounded-lg bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500" aria-label="Pause"><Pause className="h-4 w-4" /> Pause</button>
+            <button onClick={pause} className="inline-flex h-10 items-center gap-2 rounded-lg bg-amber-600 px-3 text-sm font-semibold text-white hover:bg-amber-500 sm:px-4" aria-label="Pause"><Pause className="h-4 w-4" /> <span className="hidden sm:inline">Pause</span></button>
           ) : (
-            <button onClick={play} disabled={!current || tts.isLoading} className="inline-flex h-10 items-center gap-2 rounded-lg bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50" aria-label="Lecture"><Play className="h-4 w-4" /> Lire</button>
+            <button onClick={play} disabled={!current || tts.isLoading} className="inline-flex h-10 items-center gap-2 rounded-lg bg-amber-600 px-3 text-sm font-semibold text-white hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50 sm:px-4" aria-label="Lecture"><Play className="h-4 w-4" /> <span className="hidden sm:inline">Lire</span></button>
           )}
           <span className="hidden text-xs text-slate-500 xl:inline">Espace</span>
           <button onClick={close} className="rounded-lg p-2 hover:bg-slate-800" aria-label="Fermer"><X /></button>
@@ -472,22 +501,22 @@ export default function EpubReaderWithTTS({
       </header>
 
       {readingReminderPosition && reminderPageIndex >= 0 && (
-        <div role="status" aria-live="polite" className="absolute left-1/2 top-20 z-20 flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-lg dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
+        <div role="status" aria-live="polite" className="absolute left-1/2 top-16 z-20 flex w-[calc(100%-1.5rem)] max-w-sm -translate-x-1/2 items-center gap-3 rounded-xl sm:top-20 sm:w-[calc(100%-2rem)] border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950 shadow-lg dark:border-amber-700 dark:bg-amber-950 dark:text-amber-100">
           <span className="min-w-0 flex-1"><strong className="block">Dernière lecture</strong>Vous vous êtes arrêté à la page {reminderPageIndex + 1}, au paragraphe {reminderParagraphNumber}.</span>
           <button type="button" onClick={() => setReadingReminderPosition(null)} className="rounded-md p-1 hover:bg-amber-100" aria-label="Fermer le rappel"><X className="h-4 w-4" /></button>
         </div>
       )}
 
       <AccessibilityContextMenu settings={accessibilitySettings} onChange={setAccessibilitySettings} pointerTrackingEnabled={!isPlaying}>
-        <main ref={readingPaneRef} className="flex-1 overflow-y-auto bg-slate-100 px-4 py-8 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
-          <article data-reader-content style={readerContentStyle(accessibilitySettings)} className="mx-auto max-w-3xl rounded-xl bg-white p-6 shadow-sm dark:bg-slate-900 sm:p-10">
+        <main ref={readingPaneRef} className="flex-1 overflow-y-auto bg-slate-100 px-2 py-4 text-slate-900 dark:bg-slate-950 dark:text-slate-100 sm:px-4 sm:py-8">
+          <article data-reader-content style={readerContentStyle(accessibilitySettings)} className="mx-auto max-w-3xl rounded-xl bg-white p-4 shadow-sm dark:bg-slate-900 sm:p-6 lg:p-10">
           {!paragraphs.length && !loadError && <p className="text-slate-500">Extraction des paragraphes…</p>}
           {loadError && <p className="text-red-600">{loadError}</p>}
           {visibleParagraphs.map((paragraph, pageParagraphIndex) => {
             const paragraphIndex = (pages[pageIndex]?.startIndex ?? 0) + pageParagraphIndex;
             const tokens = paragraph.id === current?.id ? currentTokens : tokenizeText(paragraph.text);
             return (
-              <p key={paragraph.id} className="mb-5 rounded px-2 text-lg leading-8">
+              <p key={paragraph.id} className="mb-5 rounded px-1 leading-8 sm:px-2">
                 {tokens.map((token, tokenIndex) => {
                   if (token.wordIndex === null) return <span key={tokenIndex}>{token.text}</span>;
                   const isActiveWord = paragraph.id === current?.id && token.wordIndex === activeWordIndex;
@@ -512,12 +541,12 @@ export default function EpubReaderWithTTS({
         </main>
       </AccessibilityContextMenu>
 
-      <footer className="border-t border-slate-800 bg-slate-950 px-4 py-3">
-        <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-2">
+      <footer className="border-t border-slate-800 bg-slate-950 px-2 py-2 sm:px-4 sm:py-3">
+        <div className="mx-auto flex max-w-3xl flex-wrap items-center justify-center gap-1.5 sm:justify-start sm:gap-2">
           <button onClick={() => goToPage(pageIndex - 1)} disabled={pageIndex === 0} className="rounded-lg p-2 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-30" aria-label="Page précédente"><ChevronLeft /></button>
           {isPlaying ? <button onClick={pause} className="rounded-lg bg-indigo-600 p-3 hover:bg-indigo-500" aria-label="Pause"><Pause /></button> : <button onClick={play} disabled={!current || tts.isLoading} className="rounded-lg bg-indigo-600 p-3 hover:bg-indigo-500 disabled:opacity-50" aria-label="Lecture"><Play /></button>}
           <button onClick={() => goToPage(pageIndex + 1)} disabled={pageIndex >= pages.length - 1} className="rounded-lg p-2 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-30" aria-label="Page suivante"><ChevronRight /></button>
-          <span className="mx-2 text-sm text-slate-400">Page {pages.length ? pageIndex + 1 : "…"} / {pages.length || "…"}</span>
+          <span className="mx-1 whitespace-nowrap text-sm text-slate-400 sm:mx-2">Page {pages.length ? pageIndex + 1 : "…"} / {pages.length || "…"}</span>
           <form onSubmit={submitPage} className="flex items-center gap-1" aria-label="Aller à une page">
             <label htmlFor="reader-page-number" className="sr-only">Numéro de page</label>
             <input
@@ -527,7 +556,7 @@ export default function EpubReaderWithTTS({
               max={Math.max(1, pages.length)}
               value={pageInput}
               onChange={(event) => setPageInput(event.target.value)}
-              className="h-9 w-16 rounded-md border border-slate-700 bg-slate-900 px-2 text-center text-sm text-white outline-none focus:border-amber-500"
+              className="h-9 w-14 rounded-md border border-slate-700 bg-slate-900 px-1 text-center text-base text-white outline-none focus:border-amber-500 sm:w-16 sm:px-2 sm:text-sm"
               aria-label="Numéro de page"
             />
             <button type="submit" disabled={!pages.length} className="h-9 rounded-md bg-slate-800 px-3 text-xs font-semibold text-slate-100 hover:bg-slate-700 disabled:opacity-40">Aller</button>
@@ -539,7 +568,8 @@ export default function EpubReaderWithTTS({
             <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="rounded bg-slate-800 px-2 py-1"><option value="0.8">0.8×</option><option value="1">1×</option><option value="1.2">1.2×</option><option value="1.5">1.5×</option></select>
           </label>}
           {tts.isLoading && <span className="text-xs text-amber-300">Génération…</span>}
-          {tts.isError && <span className="flex items-center gap-1 text-xs text-red-300"><AlertCircle className="h-4 w-4" /> {tts.error instanceof Error ? tts.error.message : "Moteur vocal indisponible"}</span>}
+          {tts.isError && <span className="flex items-center gap-1 text-xs text-red-300"><AlertCircle className="h-4 w-4 shrink-0" /> {tts.error instanceof Error ? tts.error.message : "Moteur vocal indisponible"}</span>}
+          {speechError && <span className="flex items-center gap-1 text-xs text-red-300"><AlertCircle className="h-4 w-4 shrink-0" /> {speechError}</span>}
           {tts.data && !isPlaying && <RotateCcw className="h-4 w-4 text-emerald-400" aria-label="Audio en cache" />}
         </div>
       </footer>

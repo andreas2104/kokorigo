@@ -21,6 +21,25 @@ public sealed class PiperTtsService : ITtsEngine
         ("fr_FR-gilles-low", "fr_FR-gilles-low.onnx", new("piper:fr_FR-gilles-low", "piper", "Gilles", "fr-FR", "Voix française · Homme", "Voix française masculine (modèle Piper Gilles)", "fr_FR-gilles-low")),
     ];
 
+    // Le navigateur peut exécuter Piper en WebAssembly : il télécharge alors le
+    // même modèle que celui utilisé par l'API, servi depuis cette machine.
+    public bool TryGetModelPath(string fileName, out string path)
+    {
+        path = string.Empty;
+        var known = VoiceDefinitions.Any(item =>
+            string.Equals(item.Model, fileName, StringComparison.OrdinalIgnoreCase)
+            || string.Equals($"{item.Model}.json", fileName, StringComparison.OrdinalIgnoreCase));
+        if (!known)
+            return false;
+
+        var candidate = Path.Combine(_piperDirectory, fileName);
+        if (!File.Exists(candidate))
+            return false;
+
+        path = candidate;
+        return true;
+    }
+
     public IReadOnlyList<TtsVoice> Voices => VoiceDefinitions
         .Where(item => File.Exists(Path.Combine(_piperDirectory, item.Model)) && File.Exists(Path.Combine(_piperDirectory, $"{item.Model}.json")))
         .Select(item => item.Voice)

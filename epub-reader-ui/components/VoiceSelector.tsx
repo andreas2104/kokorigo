@@ -2,8 +2,10 @@
 
 import { Check, ChevronDown, Loader2, Play, Square } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { Voice } from "@/types/voice";
+import { engineLabel, type Voice } from "@/types/voice";
 import { requestTtsAudio } from "@/hooks/useAudioTTS";
+import { isDeviceVoice, speakWithDevice } from "@/lib/device-speech";
+import { tokenizeText } from "@/lib/word-timing";
 
 type Props = {
   voices: Voice[];
@@ -18,11 +20,11 @@ export default function VoiceSelector({ voices, selectedVoiceId, onChange, disab
   const [previewError, setPreviewError] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const deviceStopRef = useRef<(() => void) | null>(null);
   const selectedVoice = voices.find((voice) => voice.id === selectedVoiceId) ?? voices[0];
   const groupedVoices = useMemo(() => {
     return voices.reduce<Record<string, Voice[]>>((groups, voice) => {
-      const engine = voice.engine === "f5tts" ? "F5-TTS Français" : voice.engine === "kokoro" ? "Kokoro" : "Piper";
-      (groups[`${engine} · ${voice.language}`] ??= []).push(voice);
+      (groups[`${engineLabel(voice.engine)} · ${voice.language}`] ??= []).push(voice);
       return groups;
     }, {});
   }, [voices]);
@@ -32,6 +34,8 @@ export default function VoiceSelector({ voices, selectedVoiceId, onChange, disab
   const stopPreview = () => {
     audioRef.current?.pause();
     audioRef.current = null;
+    deviceStopRef.current?.();
+    deviceStopRef.current = null;
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
     previewUrlRef.current = null;
     setPreviewingId(null);
@@ -50,10 +54,24 @@ export default function VoiceSelector({ voices, selectedVoiceId, onChange, disab
       const previewText = voice.language.startsWith("en")
         ? `Hello. I am ${voice.name}, a voice available for narrating your books.`
         : `Bonjour. Je suis ${voice.name}, une voix disponible pour la narration de vos livres.`;
-      const url = await requestTtsAudio(
-        previewText,
-        { voice: voice.id, speed: 1 },
-      );
+
+      if (isDeviceVoice(voice.id)) {
+        deviceStopRef.current = speakWithDevice({
+          text: previewText,
+          tokens: tokenizeText(previewText),
+          voiceId: voice.id,
+          rate: 1,
+          onWordIndex: () => undefined,
+          onEnd: stopPreview,
+          onError: () => {
+            stopPreview();
+            setPreviewError("Extrait indisponible");
+          },
+        });
+        return;
+      }
+
+      const url = await requestTtsAudio(previewText, { voice: voice.id, speed: 1 });
       previewUrlRef.current = url;
       const audio = new Audio(url);
       audioRef.current = audio;
@@ -82,7 +100,7 @@ export default function VoiceSelector({ voices, selectedVoiceId, onChange, disab
         <span className="min-w-0">
           <span className="block truncate font-medium">{selectedVoice?.name ?? "Choisir une voix"}</span>
           <span className="block text-xs text-slate-400">
-            {selectedVoice ? `${selectedVoice.engine === "f5tts" ? "F5-TTS Français" : selectedVoice.engine === "kokoro" ? "Kokoro" : "Piper"} · ${selectedVoice.language}` : ""}
+            {selectedVoice ? `${engineLabel(selectedVoice.engine)} · ${selectedVoice.language}` : ""}
           </span>
         </span>
         <ChevronDown className={`h-4 w-4 shrink-0 transition-transform ${open ? "rotate-180" : ""}`} />

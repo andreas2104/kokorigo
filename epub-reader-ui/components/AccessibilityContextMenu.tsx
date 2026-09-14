@@ -100,6 +100,9 @@ export default function AccessibilityContextMenu({ settings, onChange, children,
   const menuRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const firstItemRef = useRef<HTMLButtonElement>(null);
+  const longPressTimerRef = useRef<number | null>(null);
+  const longPressOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const suppressClickRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -116,21 +119,58 @@ export default function AccessibilityContextMenu({ settings, onChange, children,
     };
   }, [open]);
 
-  const show = (event: React.MouseEvent<HTMLElement>) => {
-    event.preventDefault();
+  const cancelLongPress = () => {
+    if (longPressTimerRef.current !== null) window.clearTimeout(longPressTimerRef.current);
+    longPressTimerRef.current = null;
+    longPressOriginRef.current = null;
+  };
+
+  const openAt = (clientX: number, clientY: number) => {
     const width = 260;
-    const height = fontsOpen ? 390 : 285;
+    const height = Math.min(fontsOpen ? 390 : 285, window.innerHeight * 0.7);
     setPosition({
-      x: Math.min(event.clientX, Math.max(8, window.innerWidth - width - 8)),
-      y: Math.min(event.clientY, Math.max(8, window.innerHeight - height - 8)),
+      x: Math.min(clientX, Math.max(8, window.innerWidth - width - 8)),
+      y: Math.min(clientY, Math.max(8, window.innerHeight - height - 8)),
     });
     setOpen(true);
   };
 
+  const show = (event: React.MouseEvent<HTMLElement>) => {
+    event.preventDefault();
+    openAt(event.clientX, event.clientY);
+  };
+
+  // Un écran tactile n'a pas de clic droit : l'appui long ouvre le même menu.
+  const startLongPress = (event: React.PointerEvent<HTMLDivElement>) => {
+    suppressClickRef.current = false;
+    cancelLongPress();
+    if (event.pointerType !== "touch" || menuRef.current?.contains(event.target as Node)) return;
+    const { clientX, clientY } = event;
+    longPressOriginRef.current = { x: clientX, y: clientY };
+    longPressTimerRef.current = window.setTimeout(() => {
+      longPressTimerRef.current = null;
+      suppressClickRef.current = true;
+      openAt(clientX, clientY);
+    }, 500);
+  };
+
+  // L'appui long ne doit pas déclencher la lecture du mot touché.
+  const swallowClickAfterLongPress = (event: React.MouseEvent<HTMLDivElement>) => {
+    if (!suppressClickRef.current) return;
+    suppressClickRef.current = false;
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  useEffect(() => () => cancelLongPress(), []);
+
   const change = (partial: Partial<ReaderAccessibilitySettings>) => onChange({ ...settings, ...partial });
   const close = () => { setOpen(false); setFontsOpen(false); };
   const followPointer = (event: React.PointerEvent<HTMLDivElement>) => {
-    if (!pointerTrackingEnabled) return;
+    const origin = longPressOriginRef.current;
+    if (origin && Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > 10) cancelLongPress();
+    // Le défilement tactile ne doit pas déplacer le centre du zoom.
+    if (event.pointerType === "touch" || !pointerTrackingEnabled) return;
     if (menuRef.current?.contains(event.target as Node)) return;
     const content = wrapperRef.current?.querySelector<HTMLElement>("[data-reader-content]");
     if (!content) return;
@@ -149,10 +189,19 @@ export default function AccessibilityContextMenu({ settings, onChange, children,
   ];
 
   return (
-    <div ref={wrapperRef} onContextMenu={show} onPointerMove={followPointer} className="contents">
+    <div
+      ref={wrapperRef}
+      onContextMenu={show}
+      onPointerMove={followPointer}
+      onPointerDown={startLongPress}
+      onPointerUp={cancelLongPress}
+      onPointerCancel={cancelLongPress}
+      onClickCapture={swallowClickAfterLongPress}
+      className="contents"
+    >
       {children}
       {open && (
-        <div ref={menuRef} role="menu" aria-label="Options d’accessibilité" className="fixed z-[100] w-64 rounded-xl border border-slate-200 bg-white p-1.5 text-slate-800 shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" style={{ left: position.x, top: position.y }} onKeyDown={(event) => {
+        <div ref={menuRef} role="menu" aria-label="Options d’accessibilité" className="fixed z-[100] max-h-[70vh] w-64 max-w-[calc(100vw-1rem)] overflow-y-auto overscroll-contain rounded-xl border border-slate-200 bg-white p-1.5 text-slate-800 shadow-2xl dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100" style={{ left: position.x, top: position.y }} onKeyDown={(event) => {
           if (event.key === "Escape") { event.preventDefault(); close(); return; }
           const target = event.target as HTMLElement;
           const menuItems = Array.from(menuRef.current?.querySelectorAll<HTMLElement>("[role='menuitem']:not([aria-disabled='true'])") ?? []);

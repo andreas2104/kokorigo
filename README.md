@@ -46,3 +46,42 @@ automatically. Kokoro downloads its model and each selected voice on first use.
 F5-TTS uses an isolated Python environment. Installation, model configuration,
 CPU/GPU notes and the standalone test are documented in
 [`assets/tts/f5tts/README.md`](assets/tts/f5tts/README.md).
+
+## Mobile et hors ligne
+
+L'interface est responsive : sur téléphone le lecteur occupe l'écran, la
+bibliothèque et les réglages vocaux deviennent des panneaux dépliables, et
+l'appui long sur le texte ouvre le menu d'accessibilité (taille, zoom, police).
+
+L'application est installable (PWA) depuis le menu du navigateur et reste
+utilisable sans réseau :
+
+- le service worker (`epub-reader-ui/public/sw.js`) met en cache l'interface ;
+  incrémenter `CACHE_NAME` à chaque mise en production pour purger l'ancien ;
+- les EPUB importés sont copiés dans IndexedDB, ainsi que ceux ouverts depuis
+  l'API : la bibliothèque et la position de lecture restent disponibles ;
+- les imports et suppressions faits hors ligne sont rejoués sur l'API dès le
+  retour du réseau ;
+- la synthèse vocale dispose de deux recours sans réseau : la voix Piper
+  embarquée (ci-dessous) et, à défaut, les voix du téléphone (repérées par
+  « Appareil »). Piper, Kokoro et F5-TTS côté serveur restent utilisés dès que
+  l'API répond.
+
+Le service worker n'est enregistré qu'en production (`next build && next start`
+ou l'image Docker), pas en `next dev`.
+
+### Voix Piper exécutée par le téléphone
+
+Le panneau « Lecture vocale » propose de télécharger la voix du serveur
+(`fr_FR-siwis-medium`, environ 90 Mo avec son moteur). Le modèle vient de l'API
+(`GET /api/v1/tts/model/<fichier>`, liste blanche des modèles Piper installés),
+est enregistré dans le stockage privé du navigateur, puis la synthèse s'exécute
+dans un worker WebAssembly : même voix qu'en ligne, sans requête réseau ni CDN.
+Une première synthèse est lancée à l'installation pour mettre le moteur en cache
+tant que la connexion est disponible.
+
+Les binaires WebAssembly sont copiés dans `public/piper` par
+`scripts/copy-piper-assets.mjs`, exécuté par `npm run dev` et `npm run build`.
+
+Kokoro et F5-TTS restent côté serveur : leurs modèles (plusieurs centaines de Mo,
+et de la diffusion pour F5) ne tiennent pas dans un navigateur de téléphone.
