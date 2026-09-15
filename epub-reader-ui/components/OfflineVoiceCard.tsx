@@ -5,15 +5,20 @@ import { AlertCircle, Check, CloudDownload, Loader2, Trash2 } from "lucide-react
 import { useEffect, useState } from "react";
 import {
   LOCAL_PIPER_MODEL_MEGABYTES,
+  LOCAL_PIPER_VOICE_ID,
   describeLocalPiperSupport,
   installLocalPiper,
   isLocalPiperInstalled,
   removeLocalPiper,
 } from "@/lib/piper-local";
 
+type Props = {
+  onInstalled?: (voiceId: string) => void;
+};
+
 // Télécharge une fois le modèle Piper du serveur pour que la même voix soit
 // synthétisée par le téléphone, sans réseau.
-export default function OfflineVoiceCard() {
+export default function OfflineVoiceCard({ onInstalled }: Props) {
   const queryClient = useQueryClient();
   const [support, setSupport] = useState({ supported: false, reason: "" });
   const [installed, setInstalled] = useState(false);
@@ -46,6 +51,9 @@ export default function OfflineVoiceCard() {
       await installLocalPiper(setProgress);
       setInstalled(true);
       await refreshVoices();
+      // Sans cela, la lecture continuerait d'utiliser la voix du serveur alors
+      // que l'utilisateur vient justement de télécharger la voix embarquée.
+      onInstalled?.(LOCAL_PIPER_VOICE_ID);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Téléchargement impossible.");
     } finally {
@@ -73,7 +81,7 @@ export default function OfflineVoiceCard() {
       {installed ? (
         <>
           <p className="mt-2 flex items-center gap-1.5 text-xs text-emerald-700 dark:text-emerald-400">
-            <Check className="h-4 w-4 shrink-0" /> Installée : « Siwis hors ligne » lit sans réseau.
+            <Check className="h-4 w-4 shrink-0" /> Installée et sélectionnée : « Siwis · Piper embarqué » lit sans réseau.
           </p>
           <button
             type="button"

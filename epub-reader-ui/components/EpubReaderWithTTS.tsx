@@ -568,8 +568,8 @@ export default function EpubReaderWithTTS({
             <select value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="rounded bg-slate-800 px-2 py-1"><option value="0.8">0.8×</option><option value="1">1×</option><option value="1.2">1.2×</option><option value="1.5">1.5×</option></select>
           </label>}
           {tts.isLoading && <span className="text-xs text-amber-300">Génération…</span>}
-          {tts.isError && <span className="flex items-center gap-1 text-xs text-red-300"><AlertCircle className="h-4 w-4 shrink-0" /> {tts.error instanceof Error ? tts.error.message : "Moteur vocal indisponible"}</span>}
-          {speechError && <span className="flex items-center gap-1 text-xs text-red-300"><AlertCircle className="h-4 w-4 shrink-0" /> {speechError}</span>}
+          {tts.isError && <span className="flex w-full min-w-0 items-start gap-1 text-left text-xs text-red-300 [overflow-wrap:anywhere]"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {tts.error instanceof Error ? tts.error.message : "Moteur vocal indisponible"}</span>}
+          {speechError && <span className="flex w-full min-w-0 items-start gap-1 text-left text-xs text-red-300 [overflow-wrap:anywhere]"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /> {speechError}</span>}
           {tts.data && !isPlaying && <RotateCcw className="h-4 w-4 text-emerald-400" aria-label="Audio en cache" />}
         </div>
       </footer>

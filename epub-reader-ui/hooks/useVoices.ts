@@ -30,8 +30,8 @@ async function localPiperVoice(): Promise<Voice[]> {
   const installed = await isLocalPiperInstalled();
   return [{
     id: LOCAL_PIPER_VOICE_ID,
-    engine: "piper",
-    name: "Siwis hors ligne",
+    engine: "piper-local",
+    name: "Siwis",
     language: "fr-FR",
     character: "Voix du serveur, embarquée",
     description: installed
@@ -60,7 +60,7 @@ export function useVoices() {
     // Torch takes a few seconds to import in the Docker image. Refresh the
     // inventory until Kokoro's health endpoint becomes available.
     refetchInterval: (query) => query.state.data?.some(
-      (voice) => voice.engine !== "piper" && voice.engine !== "device" && !voice.available,
+      (voice) => !["piper", "piper-local", "device"].includes(voice.engine) && !voice.available,
     ) ? 2_000 : false,
   });
 

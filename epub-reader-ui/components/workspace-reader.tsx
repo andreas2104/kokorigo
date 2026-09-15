@@ -35,6 +35,7 @@ import type { BookItem } from "@/types/book";
 import { engineLabel } from "@/types/voice";
 
 const speeds = [0.8, 1, 1.2, 1.5];
+const VOICE_STORAGE_KEY = "kokorigo:voice";
 
 function initials(title: string) {
   return title.split(/\s+/).filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase()).join("");
@@ -51,7 +52,7 @@ export default function WorkspaceReader() {
   const [dragging, setDragging] = useState(false);
   const [busyBookId, setBusyBookId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [voiceId, setVoiceId] = useState("piper:ff_siwis");
+  const [voiceId, setVoiceIdState] = useState("piper:ff_siwis");
   const [speed, setSpeed] = useState(1);
   const [previewing, setPreviewing] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -95,6 +96,22 @@ export default function WorkspaceReader() {
     localStorage.setItem("kokorigo:theme", nextTheme ? "dark" : "light");
     document.documentElement.classList.toggle("dark", nextTheme);
   };
+
+  // La voix choisie doit survivre au rechargement : sans cela, le lecteur
+  // repassait sur la voix du serveur à chaque ouverture.
+  const setVoiceId = (nextVoiceId: string) => {
+    setVoiceIdState(nextVoiceId);
+    try {
+      localStorage.setItem(VOICE_STORAGE_KEY, nextVoiceId);
+    } catch {
+      // Sans stockage local, le choix vaut simplement pour cette session.
+    }
+  };
+
+  useEffect(() => {
+    const saved = localStorage.getItem(VOICE_STORAGE_KEY);
+    if (saved) setVoiceIdState(saved);
+  }, []);
 
   const openPicker = () => inputRef.current?.click();
 
@@ -262,9 +279,9 @@ export default function WorkspaceReader() {
           </div>
 
           <div id="voice-panel" className={`${voicePanelOpen ? "block" : "hidden"} lg:block`}>
-            <section className="mt-4 rounded-xl border border-[#ece5dc] p-3 dark:border-slate-800"><p className="flex items-center gap-2 text-sm font-semibold"><Volume2 className="h-4 w-4 text-[#c66600]" /> Voix sélectionnée</p><label className="relative mt-3 block"><span className="sr-only">Voix</span><select value={selectedVoice?.id ?? ""} onChange={(event) => setVoiceId(event.target.value)} disabled={voicesQuery.isLoading || !voices.length} className="h-14 w-full appearance-none rounded-xl border border-[#e8e2da] bg-[#fffdfa] px-3 pr-9 text-base font-semibold outline-none focus:border-[#d27a0b] dark:border-slate-700 dark:bg-slate-950 sm:text-sm"><option value="">{voicesQuery.isLoading ? "Chargement des voix…" : "Aucune voix disponible"}</option>{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name} · {engineLabel(voice.engine)}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-5 h-4 w-4 text-[#778093]" /></label>{selectedVoice && <p className="mt-2 text-xs text-[#768096] dark:text-slate-400">{selectedVoice.language} · {selectedVoice.character || "Voix naturelle"}</p>}{!voicesQuery.isLoading && !voices.length && <p className="mt-2 text-xs leading-5 text-[#9a5000] dark:text-amber-300">Aucune voix sur cet appareil. Installez une voix française dans les réglages du téléphone : Android ‹ Paramètres ‹ Accessibilité ‹ Synthèse vocale ; iPhone ‹ Réglages ‹ Accessibilité ‹ Contenu énoncé ‹ Voix.</p>}</section>
+            <section className="mt-4 rounded-xl border border-[#ece5dc] p-3 dark:border-slate-800"><p className="flex items-center gap-2 text-sm font-semibold"><Volume2 className="h-4 w-4 text-[#c66600]" /> Voix sélectionnée</p><label className="relative mt-3 block"><span className="sr-only">Voix</span><select value={selectedVoice?.id ?? ""} onChange={(event) => setVoiceId(event.target.value)} disabled={voicesQuery.isLoading || !voices.length} className="h-14 w-full appearance-none rounded-xl border border-[#e8e2da] bg-[#fffdfa] px-3 pr-9 text-base font-semibold outline-none focus:border-[#d27a0b] dark:border-slate-700 dark:bg-slate-950 sm:text-sm">{!voices.length && <option value="">{voicesQuery.isLoading ? "Chargement des voix…" : "Aucune voix disponible"}</option>}{voices.map((voice) => <option key={voice.id} value={voice.id}>{voice.name} · {engineLabel(voice.engine)}</option>)}</select><ChevronDown className="pointer-events-none absolute right-3 top-5 h-4 w-4 text-[#778093]" /></label>{selectedVoice && <p className="mt-2 text-xs text-[#768096] dark:text-slate-400">{selectedVoice.language} · {selectedVoice.character || "Voix naturelle"}</p>}{!voicesQuery.isLoading && !voices.length && <p className="mt-2 text-xs leading-5 text-[#9a5000] dark:text-amber-300">Aucune voix sur cet appareil. Installez une voix française dans les réglages du téléphone : Android ‹ Paramètres ‹ Accessibilité ‹ Synthèse vocale ; iPhone ‹ Réglages ‹ Accessibilité ‹ Contenu énoncé ‹ Voix.</p>}</section>
 
-            <OfflineVoiceCard />
+            <OfflineVoiceCard onInstalled={setVoiceId} />
 
             <section className="mt-3 rounded-xl border border-[#ece5dc] p-3 dark:border-slate-800"><p className="flex items-center gap-2 text-sm font-semibold"><Gauge className="h-4 w-4 text-[#c66600]" /> Vitesse de lecture</p><p className="mt-3 text-sm">{speed.toFixed(1)}× {speed === 1 ? "(Normale)" : ""}</p><input type="range" min="0.8" max="1.5" step="0.1" value={speed} onChange={(event) => setSpeed(Number(event.target.value))} className="mt-3 w-full accent-[#c66600]" /><div className="flex justify-between text-xs text-[#8a91a0] dark:text-slate-500"><span>Plus lent</span><span>Plus rapide</span></div><div className="mt-3 grid grid-cols-4 gap-1.5 sm:gap-1">{speeds.map((value) => <button key={value} onClick={() => setSpeed(value)} className={`rounded-lg py-2.5 text-sm sm:py-1.5 sm:text-xs ${speed === value ? "bg-[#fff0d9] font-semibold text-[#a65000] dark:bg-amber-950 dark:text-amber-300" : "bg-[#f7f5f2] text-[#687185] dark:bg-slate-800 dark:text-slate-300"}`}>{value}×</button>)}</div></section>
 
